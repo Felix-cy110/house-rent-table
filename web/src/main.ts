@@ -1,5 +1,6 @@
 import './style.css';
 import { analyze, APIError, importExcel } from './api';
+import { setupAuth } from './auth';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -9,8 +10,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </header>
   <section class="intro">
     <h1>先把租房信息看清楚。</h1>
-    <p>上传中介填写的 Excel，核对房源和费用，再开始检查。</p>
+    <p>上传中介填写的 Excel，核对后交给 Codex 分析。</p>
   </section>
+  <section id="codex-account" class="account-panel" aria-label="Codex 登录"></section>
   <section class="upload-panel" aria-labelledby="upload-title">
     <div class="section-heading"><h2 id="upload-title"><span class="step">01</span> 上传表格</h2><span class="quiet">一份表格，一套房源</span></div>
     <div id="drop-zone" class="drop-zone">
@@ -32,14 +34,17 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div class="file-heading"><p id="file-name"></p><span id="field-count" class="quiet"></span></div>
     <div id="import-warnings" class="import-warnings" hidden></div>
     <div class="table-wrap"><table><caption class="sr-only">Excel 识别内容</caption><thead><tr><th scope="col">项目</th><th scope="col">填写内容</th></tr></thead><tbody id="field-list"></tbody></table></div>
-    <div class="analysis-action"><p>请先核对识别内容。空白项目会保留为“未填写”。</p><button id="analyze-button" class="primary-button" type="button">开始检查 <span aria-hidden="true">→</span></button></div>
+    <details class="payload-preview"><summary>查看将发送的完整内容</summary><pre id="payload-content"></pre></details>
+    <div class="analysis-action"><p>点击后将完整解析内容发送给 Codex，不做删减或改写。</p><div class="analysis-buttons"><button id="cancel-analysis" class="text-button" type="button" hidden>取消分析</button><button id="analyze-button" class="primary-button" type="button">发送并分析 <span aria-hidden="true">→</span></button></div></div>
   </section>
   <section id="analysis-panel" class="analysis-panel" aria-labelledby="analysis-title" aria-live="polite" hidden>
     <h2 id="analysis-title"><span class="step">03</span> 检查结果</h2>
     <div id="analysis-content"></div>
   </section>
-  <footer><span class="status-dot" aria-hidden="true"></span>当前支持表格导入与核对，风险分析暂未开放。<br /><span class="session-note">填写内容仅用于本次会话，刷新页面后清空。</span></footer>
+  <footer>回复由 Codex 生成，当前尚未接入自定义判断 skill。<br /><span class="session-note">刷新页面后清空表格与回复。登录凭据由本机 Codex 单独管理。</span></footer>
 `;
+
+setupAuth(document.getElementById('codex-account')!);
 
 function element<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -84,7 +89,9 @@ function clearDocument() {
   showMessage('upload-status', '');
   showMessage('upload-error', '');
   analyzeButton.disabled = false;
-  analyzeButton.textContent = '开始检查 →';
+  analyzeButton.textContent = '发送并分析 →';
+  element('cancel-analysis').hidden = true;
+  element('payload-content').textContent = '';
 }
 
 function renderFields(fields: RentalField[]) {
@@ -119,6 +126,7 @@ async function upload(file: File) {
     const response = await importExcel(file, activeRequest.signal);
     if (requestGeneration !== generation) return;
     currentDocument = response.document;
+    element('payload-content').textContent = JSON.stringify(currentDocument, null, 2);
     element('file-name').textContent = currentDocument.fileName;
     const blankCount = currentDocument.fields.filter(field => field.value === null).length;
     element('field-count').textContent = `${currentDocument.fields.length} 个项目${blankCount ? `，${blankCount} 项未填写` : ''}`;
@@ -135,23 +143,8 @@ async function upload(file: File) {
   }
 }
 
-function renderAnalysis(result: AnalysisResult, doc: RentalDocument) {
-  analysisContent.replaceChildren(textElement('p', result.summary, 'result-summary'));
-  const severityNames = { high: '重点核实', medium: '建议确认', low: '留意事项' };
-  for (const finding of result.findings) {
-    const card = textElement('article', '', 'finding');
-    card.append(textElement('span', severityNames[finding.severity], `severity ${finding.severity}`), textElement('h3', finding.title), textElement('p', finding.description));
-    const evidence = doc.fields.filter(field => finding.evidenceFieldIds.includes(field.id));
-    if (evidence.length) card.append(textElement('p', `依据：${evidence.map(field => `${field.label}（${field.sheet}!${field.cell}）`).join('、')}`, 'quiet'));
-    if (finding.followUp) card.append(textElement('p', `向中介确认：${finding.followUp}`));
-    analysisContent.append(card);
-  }
-  if (result.missingInformation.length) {
-    const missing = textElement('div', '', 'missing-information');
-    missing.append(textElement('h3', '还需要确认的信息'));
-    for (const item of result.missingInformation) missing.append(textElement('p', `${item.label}：${item.reason}`));
-    analysisContent.append(missing);
-  }
+function renderAnalysis(result: AnalysisResult) {
+  analysisContent.replaceChildren(textElement('div', result.text, 'codex-response'));
 }
 
 fileInput.addEventListener('change', () => {
@@ -180,30 +173,36 @@ dropZone.addEventListener('drop', e => {
 element('clear-button').addEventListener('click', () => { clearDocument(); fileInput.focus(); });
 analyzeButton.addEventListener('click', async () => {
   if (!currentDocument) return;
-  const doc = currentDocument;
+  const payload = JSON.stringify(currentDocument, null, 2);
   const requestGeneration = generation;
   activeRequest?.abort();
   activeRequest = new AbortController();
   analyzeButton.disabled = true;
-  analyzeButton.textContent = '正在检查…';
+  analyzeButton.textContent = 'Codex 正在分析…';
+  element('cancel-analysis').hidden = false;
   analysisPanel.hidden = false;
-  analysisContent.replaceChildren(textElement('p', '正在提交检查…', 'quiet'));
+  analysisContent.replaceChildren(textElement('p', '已发送完整内容，正在等待 Codex 回复…', 'quiet'));
   try {
-    const result = await analyze(doc, activeRequest.signal);
-    if (requestGeneration === generation) renderAnalysis(result, doc);
+    const result = await analyze(payload, activeRequest.signal);
+    if (requestGeneration === generation) renderAnalysis(result);
   } catch (error) {
     if (requestGeneration !== generation) return;
-    if (error instanceof APIError && error.code === 'analysis_not_configured') {
-      const notice = textElement('div', '', 'unavailable');
-      notice.append(textElement('h3', '表格已就绪，分析暂未开放'), textElement('p', '你可以核对上方信息。当前没有生成风险判断。'));
-      analysisContent.replaceChildren(notice);
-    } else {
-      analysisContent.replaceChildren(textElement('p', error instanceof APIError ? error.message : '无法连接分析服务，请稍后重试。', 'message error'));
-    }
+    analysisContent.replaceChildren(textElement('p', error instanceof APIError ? error.message : '无法连接分析服务，请稍后重试。', 'message error'));
   } finally {
     if (requestGeneration === generation) {
       analyzeButton.disabled = false;
-      analyzeButton.textContent = '开始检查 →';
+      analyzeButton.textContent = '发送并分析 →';
+      element('cancel-analysis').hidden = true;
     }
   }
+});
+
+element('cancel-analysis').addEventListener('click', () => {
+  generation++;
+  activeRequest?.abort();
+  activeRequest = null;
+  analyzeButton.disabled = false;
+  analyzeButton.textContent = '发送并分析 →';
+  element('cancel-analysis').hidden = true;
+  analysisContent.replaceChildren(textElement('p', '已取消本次分析。', 'quiet'));
 });
