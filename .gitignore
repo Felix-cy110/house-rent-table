@@ -1,0 +1,8 @@
+.work/
+node_modules/
+~$*
+.DS_Store
+Thumbs.db
+填写记录/
+private/
+*.inspect.ndjson
