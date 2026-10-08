@@ -1,0 +1,22 @@
+{
+  "name": "house-rent-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test:e2e": "npm run build && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/node": "^24.0.0",
+    "fflate": "^0.8.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

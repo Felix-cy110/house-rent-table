@@ -6,3 +6,10 @@ Thumbs.db
 填写记录/
 private/
 *.inspect.ndjson
+web/dist/
+web/playwright-report/
+web/test-results/
+bin/
+.env
+.env.*
+!.env.example
