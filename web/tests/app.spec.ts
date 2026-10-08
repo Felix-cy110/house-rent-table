@@ -38,6 +38,21 @@ test('同名文件重新上传可增删和重排字段，刷新不保留内容',
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
 });
 
+test('说明表头下的小区地点按原顺序和来源显示', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([
+    ['详细填写，不要含糊', '数值'], ['小区地点', '测试小区 2 栋'], ['中介姓名', null],
+  ]));
+  await expect(page.getByText('2 个项目，1 项未填写')).toBeVisible();
+  const rows = page.locator('#field-list tr');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText('小区地点');
+  await expect(rows.nth(0)).toContainText('Sheet1 · B2');
+  await expect(rows.nth(0).getByRole('cell')).toHaveText('测试小区 2 栋');
+  await expect(rows.nth(1)).toContainText('中介姓名');
+  await expect(rows.nth(1).getByRole('cell')).toHaveText('未填写');
+});
+
 test('错误文件或额外列给出提示并清空上一份结果', async ({ page }) => {
   await page.goto('/');
   const input = page.getByLabel('选择 Excel 文件');
@@ -101,9 +116,32 @@ test('结果组件支持未来分析接口的风险证据和待确认事项', as
   await expect(page.getByText('测试缺失项：测试原因')).toBeVisible();
 });
 
-test('空白模板可通过页面下载', async ({ page }) => {
+test('空白模板下载后可重新上传，说明表头不作为业务字段', async ({ page }) => {
   await page.goto('/');
   const download = page.waitForEvent('download');
   await page.getByRole('link', { name: '下载空白模板' }).click();
-  expect((await download).suggestedFilename()).toBe('租房信息模板.xlsx');
+  const downloaded = await download;
+  expect(downloaded.suggestedFilename()).toBe('租房信息模板.xlsx');
+  const stream = await downloaded.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const imported = page.waitForResponse('**/api/import');
+  await page.getByLabel('选择 Excel 文件').setInputFiles({
+    name: downloaded.suggestedFilename(),
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.concat(chunks),
+  });
+  const response = await imported;
+  expect(response.status()).toBe(200);
+  const { document } = await response.json();
+  expect(document.fields.length).toBeGreaterThan(0);
+  expect(document.fields.every((field: { cell: string; value: string | null }) => field.cell !== 'B1' && field.value === null)).toBe(true);
+  await expect(page.getByText(`${document.fields.length} 个项目，${document.fields.length} 项未填写`)).toBeVisible();
+  await expect(page.locator('#field-list tr')).toHaveCount(document.fields.length);
+  await expect(page.getByRole('cell', { name: '未填写', exact: true })).toHaveCount(document.fields.length);
+  const locationIndex = document.fields.findIndex((field: { label: string }) => field.label === '小区地点');
+  expect(locationIndex).toBeGreaterThanOrEqual(0);
+  expect(document.fields[locationIndex + 1]?.label).toBe('中介姓名');
+  await expect(page.locator('#field-list tr').nth(locationIndex)).toContainText('小区地点');
+  await expect(page.locator('#field-list tr').nth(locationIndex + 1)).toContainText('中介姓名');
 });

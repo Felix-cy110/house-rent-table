@@ -144,7 +144,12 @@ func parseSheet(ctx context.Context, f *excelize.File, sheet string) ([]document
 }
 
 func isHeader(label, value string) bool {
+	// The template reserves "数值" as its first content row's column header.
+	// Its left cell may contain arbitrary filling instructions, not a field name.
+	if value == "数值" {
+		return true
+	}
 	labelOK := label == "" || label == "项目" || label == "字段" || label == "字段名"
-	valueOK := value == "数值" || value == "值" || value == "内容" || value == "填写值"
+	valueOK := value == "值" || value == "内容" || value == "填写值"
 	return labelOK && valueOK
 }
