@@ -73,6 +73,49 @@ func TestChangesDoNotRequireKnownLabels(t *testing.T) {
 	}
 }
 
+func TestInstructionHeaderPreservesDynamicFields(t *testing.T) {
+	for _, instruction := range []string{"详细填写，不要含糊 ", "请分别注明收费单位和周期"} {
+		t.Run(instruction, func(t *testing.T) {
+			data := testxlsx.Bytes(t, [][]any{
+				{}, {instruction, " 数值 "}, {"水费", "5元/吨"}, {"电费", "1元/度"},
+				{"保洁费", 0}, {"以后新增的项目", nil}, {"填写说明", "数值"},
+			})
+			result, err := Parse(context.Background(), bytes.NewReader(data), "test.xlsx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := result.Document.Fields
+			if len(fields) != 5 {
+				t.Fatalf("header must be excluded and all data rows retained: %+v", fields)
+			}
+			if fields[0].Label != "水费" || fields[0].Cell != "B3" || *fields[0].Value != "5元/吨" ||
+				fields[1].Label != "电费" || *fields[1].Value != "1元/度" ||
+				fields[2].Label != "保洁费" || *fields[2].Value != "0" || fields[3].Value != nil {
+				t.Fatalf("field values or original source positions changed: %+v", fields)
+			}
+			if fields[4].Label != "填写说明" || *fields[4].Value != "数值" {
+				t.Fatal("a later data row must not be treated as a header")
+			}
+		})
+	}
+}
+
+func TestHeaderLikeDataWithoutHeaderIsPreserved(t *testing.T) {
+	for _, value := range []string{"内容", "值", "填写值", "请参考附件"} {
+		t.Run(value, func(t *testing.T) {
+			data := testxlsx.Bytes(t, [][]any{{"详细填写，不要含糊", value}})
+			result, err := Parse(context.Background(), bytes.NewReader(data), "test.xlsx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := result.Document.Fields
+			if len(fields) != 1 || fields[0].Cell != "B1" || fields[0].Value == nil || *fields[0].Value != value {
+				t.Fatalf("non-header data was lost: %+v", fields)
+			}
+		})
+	}
+}
+
 func TestUnsupportedContentIsNotSilentlyDropped(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -182,5 +225,38 @@ func TestRepositoryTemplate(t *testing.T) {
 		if field.Value != nil {
 			t.Fatal("public template must remain blank")
 		}
+	}
+	locationIndex := -1
+	for i, field := range result.Document.Fields {
+		if field.Label == "小区地点" {
+			locationIndex = i
+			break
+		}
+	}
+	if locationIndex < 0 || locationIndex+1 >= len(result.Document.Fields) || result.Document.Fields[locationIndex+1].Label != "中介姓名" {
+		t.Fatal("the default template must place 小区地点 immediately above 中介姓名")
+	}
+	// Fill the actual template in memory to verify that the new field's value
+	// and evidence source survive import without adding a business-specific type.
+	workbook, err := excelize.OpenFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workbook.Close()
+	location := result.Document.Fields[locationIndex]
+	if err := workbook.SetCellValue(location.Sheet, location.Cell, "测试小区 2 栋"); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := workbook.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	filled, err := Parse(context.Background(), buffer, "filled.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := filled.Document.Fields[locationIndex]
+	if got.Label != location.Label || got.Cell != location.Cell || got.Sheet != location.Sheet || got.Value == nil || *got.Value != "测试小区 2 栋" {
+		t.Fatalf("location value or source changed: %+v", got)
 	}
 }
