@@ -31,7 +31,7 @@ type message struct {
 }
 
 type client struct {
-	cmd     *exec.Cmd
+	process childProcess
 	in      io.WriteCloser
 	done    chan struct{}
 	writeMu sync.Mutex
@@ -39,6 +39,12 @@ type client struct {
 	pending map[string]chan message
 	next    atomic.Int64
 	notify  func(message)
+}
+
+// Kill stops the managed process group on Windows, not just its root process.
+type childProcess interface {
+	Kill() error
+	Wait() error
 }
 
 // Resolve Windows npm's native binary, avoiding shell command interpolation.
@@ -92,26 +98,43 @@ func start(binary, home, cwd string, notify func(message)) (*client, error) {
 		cmd.Env = append(cmd.Env, entry)
 	}
 	cmd.Env = append(cmd.Env, "CODEX_HOME="+home)
-	cmd.Stderr = io.Discard // Do not log prompts, tokens or upstream errors.
-	in, err := cmd.StdinPipe()
+	input, in, err := os.Pipe()
 	if err != nil {
 		return nil, analysis.ErrUnavailable
 	}
-	out, err := cmd.StdoutPipe()
+	defer input.Close()
+	out, output, err := os.Pipe()
 	if err != nil {
 		in.Close()
 		return nil, analysis.ErrUnavailable
 	}
-	c := &client{cmd: cmd, in: in, done: make(chan struct{}), pending: make(map[string]chan message), notify: notify}
-	if err := cmd.Start(); err != nil {
+	defer output.Close()
+	stderr, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
 		in.Close()
 		out.Close()
 		return nil, analysis.ErrUnavailable
 	}
+	defer stderr.Close() // Do not log prompts, tokens or upstream errors.
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = input, output, stderr
+	process, err := launchProcess(cmd)
+	if err != nil {
+		in.Close()
+		out.Close()
+		return nil, analysis.ErrUnavailable
+	}
+	c := &client{process: process, in: in, done: make(chan struct{}), pending: make(map[string]chan message), notify: notify}
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		_ = process.Wait()
+		_ = process.Kill() // Reap descendants even if the root exits by itself.
+	}()
 	go func() {
 		defer close(c.done)
-		defer cmd.Wait()
-		defer cmd.Process.Kill()
+		defer in.Close()
+		defer out.Close()
+		defer func() { _ = process.Kill(); <-exited }()
 		scanner := bufio.NewScanner(out)
 		scanner.Buffer(make([]byte, 64*1024), 32<<20)
 		for scanner.Scan() {
@@ -188,7 +211,7 @@ func (c *client) close() {
 	select {
 	case <-c.done:
 	case <-time.After(time.Second):
-		_ = c.cmd.Process.Kill()
+		_ = c.process.Kill()
 		<-c.done
 	}
 }
