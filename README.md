@@ -27,6 +27,8 @@ OAuth 的本地回调要求浏览器和 Go 服务运行在同一台机器。当�
 
 可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；不指定模型时使用该 Codex 版本的默认模型。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。API Key 登记成功代表凭据已交给 Codex，额度、网络和模型访问权限仍需由真实分析请求验证。
 
+Windows 运行需要 Windows 10 或更新版本。Go 服务创建 Codex 时，通过 `PROC_THREAD_ATTRIBUTE_JOB_LIST` 将其直接加入启用了 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job Object；Job 句柄仅由 Go 服务持有，不传给子进程。即使 Go 服务被强制结束、没有执行退出回调，Windows 也会关闭句柄并终止 Job 内的 Codex 及其后代进程。正常关闭时先关闭标准输入，最多等待 1 秒，再关闭 Job；Codex 自行退出时也会清理残留后代。无法绑定 Job 时启动失败，不回退为脱离管理的进程。这里的父进程指实际运行服务的进程；使用 `go run` 时，仅结束外层 `go` 编译启动器不等于结束服务。其他平台保留原有进程关闭方式；当前没有空闲超时或独立守护服务。
+
 接入依据：[官方 Codex App Server 的登录与会话协议](https://learn.chatgpt.com/docs/app-server)、[官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 
 开发时，两个终端分别运行：
@@ -112,6 +114,14 @@ npm run test:e2e
 ```
 
 Go 测试覆盖 Excel 导入、HTTP 校验、Codex stdio 协议、原文输入/输出、登录与取消、请求互斥、分析中断和失败。常规测试使用专用协议替身，不调用付费模型。浏览器测试启动真实 Go 服务测试上传；登录和分析响应由测试拦截，覆盖两种登录交互、完整 JSON 发送、错误恢复、取消、文本展示、窄屏和模板下载。
+
+Windows 下的 Go 测试还会启动独立辅助进程，验证仅强制结束父进程后的整棵进程树清理、启动初期退出、忽略关闭请求的子进程、后代占用标准输出、并发重复关闭，以及启动失败时的句柄释放和参数传递。这些测试不会结束正在使用的应用或 Codex。可只验证本机 Codex 在 Job 内的握手和退出，不发起登录或推理：
+
+```powershell
+$env:RENT_CODEX_JOB_SMOKE = '1'
+go test ./internal/codex -run TestInstalledCodexWindowsJob -v -count=1
+Remove-Item Env:RENT_CODEX_JOB_SMOKE
+```
 
 可选的真实 CLI 协议检查（PowerShell）：
 
