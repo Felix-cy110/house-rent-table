@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { file } from './xlsx';
 
-test('导入动态项目、区分空白与零、明确提示未接入分析', async ({ page }) => {
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: false, pending: false } }));
+});
+
+test('导入动态项目、区分空白与零、未登录时给出明确提示', async ({ page }) => {
+  await page.route('**/api/analyze', route => route.fulfill({ status: 401, json: { error: { code: 'codex_login_required', message: '请先登录 Codex，再发送并分析' } } }));
   await page.goto('/');
   await page.screenshot({ path: 'test-results/desktop-empty.png', fullPage: true });
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([
@@ -14,10 +19,10 @@ test('导入动态项目、区分空白与零、明确提示未接入分析', as
   await expect(page.getByText('“月租”出现多次，已按原表分别保留，请核对。')).toBeVisible();
   await expect(page.getByText('Sheet1 · B5', { exact: true })).toBeVisible();
   const response = page.waitForResponse('**/api/analyze');
-  await page.getByRole('button', { name: '开始检查' }).click();
-  expect((await response).status()).toBe(501);
-  await expect(page.getByText('表格已就绪，分析暂未开放')).toBeVisible();
-  await expect(page.locator('.finding')).toHaveCount(0);
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  expect((await response).status()).toBe(401);
+  await expect(page.getByText('请先登录 Codex，再发送并分析', { exact: true })).toBeVisible();
+  await expect(page.locator('.codex-response')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/desktop-imported.png', fullPage: true });
   await page.getByRole('button', { name: '清空', exact: true }).click();
   await expect(page.locator('#document-panel')).toBeHidden();
@@ -68,6 +73,7 @@ test('错误文件或额外列给出提示并清空上一份结果', async ({ pa
 });
 
 test('单元格内容按文本显示，窄屏可以阅读和操作', async ({ page }) => {
+  await page.route('**/api/analyze', route => route.fulfill({ json: { text: '<img src=x onerror="window.hacked=true">\n这是测试回复。' } }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   const literal = '<img src=x onerror="window.hacked=true">';
@@ -75,8 +81,9 @@ test('单元格内容按文本显示，窄屏可以阅读和操作', async ({ pa
   await expect(page.getByRole('cell', { name: literal, exact: true })).toBeVisible();
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole('button', { name: '开始检查' }).click();
-  await expect(page.getByText('表格已就绪，分析暂未开放')).toBeVisible();
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  await expect(page.locator('.codex-response')).toContainText('这是测试回复。');
+  expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
   await page.screenshot({ path: 'test-results/mobile-imported.png', fullPage: true });
 });
 
@@ -101,19 +108,26 @@ test('切换文件时，较慢的旧请求不会覆盖新表格', async ({ page 
   await expect(page.locator('#file-name')).toHaveText('新.xlsx');
 });
 
-test('结果组件支持未来分析接口的风险证据和待确认事项', async ({ page }) => {
-  await page.route('**/api/analyze', route => route.fulfill({ json: {
-    summary: '此内容仅由浏览器测试注入。',
-    findings: [{ id: 'test-finding', severity: 'medium', title: '测试风险项', description: '测试说明', evidenceFieldIds: ['field-1'], followUp: '测试追问' }],
-    missingInformation: [{ label: '测试缺失项', reason: '测试原因' }],
-  } }));
+test('预览的完整 JSON 原样发送，Codex 原文回复保留空格与换行', async ({ page }) => {
+  let sent = '';
+  const answer = '  原始回复\n请确认费用。\n<script>window.hacked=true</script>';
+  await page.route('**/api/analyze', route => {
+    sent = route.request().postData()!;
+    return route.fulfill({ json: { text: answer } });
+  });
   await page.goto('/');
-  await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '2000']]));
+  const imported = page.waitForResponse('**/api/import');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([['未来字段', '  原文\n0 <> &'], ['未来字段', null], ['零', '0']]));
+  const { document } = await (await imported).json();
   await expect(page.locator('#document-panel')).toBeVisible();
-  await page.getByRole('button', { name: '开始检查' }).click();
-  await expect(page.getByText('测试风险项', { exact: true })).toBeVisible();
-  await expect(page.getByText('依据：月租（Sheet1!B1）')).toBeVisible();
-  await expect(page.getByText('测试缺失项：测试原因')).toBeVisible();
+  await page.getByText('查看将发送的完整内容', { exact: true }).click();
+  const preview = await page.locator('#payload-content').textContent();
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  await expect(page.locator('.codex-response')).toBeVisible();
+  expect(sent).toBe(preview);
+  expect(JSON.parse(sent)).toEqual(document);
+  expect(await page.locator('.codex-response').textContent()).toBe(answer);
+  expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
 });
 
 test('空白模板下载后可重新上传，说明表头不作为业务字段', async ({ page }) => {

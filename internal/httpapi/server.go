@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +21,8 @@ import (
 
 type Options struct {
 	Analyzer     analysis.Analyzer
+	Auth         analysis.Authenticator
+	LocalOnly    bool
 	WebDir       string
 	TemplatePath string
 }
@@ -28,6 +32,7 @@ func New(opts Options) http.Handler {
 		opts.Analyzer = analysis.Unconfigured{}
 	}
 	mux := http.NewServeMux()
+	registerAuth(mux, opts.Auth)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -39,8 +44,18 @@ func New(opts Options) http.Handler {
 			writeError(w, http.StatusUnsupportedMediaType, "invalid_content_type", "请使用 JSON 提交分析内容")
 			return
 		}
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, "document_too_large", "分析内容过大，请精简表格后重试")
+			} else {
+				writeError(w, http.StatusBadRequest, "invalid_document", "读取分析内容失败，请重新上传表格")
+			}
+			return
+		}
 		var doc document.Document
-		decoder := json.NewDecoder(r.Body)
+		decoder := json.NewDecoder(bytes.NewReader(payload))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&doc); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_document", "分析内容格式不正确，请重新上传表格")
@@ -54,27 +69,12 @@ func New(opts Options) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid_document", err.Error())
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 		defer cancel()
-		result, err := opts.Analyzer.Analyze(ctx, doc)
-		if errors.Is(err, analysis.ErrNotConfigured) {
-			writeError(w, http.StatusNotImplemented, "analysis_not_configured", "表格已读取，风险分析暂未开放。当前没有生成任何风险判断。")
-			return
-		}
+		result, err := opts.Analyzer.Analyze(ctx, json.RawMessage(payload))
 		if err != nil {
-			writeError(w, http.StatusBadGateway, "analysis_failed", "本次分析未完成，请稍后重试")
+			writeAgentError(w, err)
 			return
-		}
-		if result.Findings == nil {
-			result.Findings = []analysis.Finding{}
-		}
-		if result.MissingInformation == nil {
-			result.MissingInformation = []analysis.MissingInformation{}
-		}
-		for i := range result.Findings {
-			if result.Findings[i].EvidenceFieldIDs == nil {
-				result.Findings[i].EvidenceFieldIDs = []string{}
-			}
 		}
 		writeJSON(w, http.StatusOK, result)
 	})
@@ -103,13 +103,28 @@ func New(opts Options) http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+	// Protect local credentials and inference from cross-origin browser requests.
+	protection := http.NewCrossOriginProtection()
+	_ = protection.AddTrustedOrigin("http://127.0.0.1:5173")
+	_ = protection.AddTrustedOrigin("http://localhost:5173")
+	protected := protection.Handler(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if opts.LocalOnly {
+			host, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				host = r.Host
+			}
+			if host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback()) {
+				writeError(w, http.StatusForbidden, "local_only", "请通过 localhost 或 127.0.0.1 访问本机服务")
+				return
+			}
+		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
-		mux.ServeHTTP(w, r)
+		protected.ServeHTTP(w, r)
 	})
 }
 

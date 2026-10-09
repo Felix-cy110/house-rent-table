@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
-	"github.com/Felix-cy110/house-rent-table/internal/document"
 	"github.com/Felix-cy110/house-rent-table/internal/importer"
 	"github.com/Felix-cy110/house-rent-table/internal/testxlsx"
 )
@@ -62,10 +61,10 @@ func TestImportThenUnconfiguredAnalysis(t *testing.T) {
 	analyze.Header.Set("Content-Type", "application/json")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, analyze)
-	if recorder.Code != http.StatusNotImplemented || !strings.Contains(recorder.Body.String(), "analysis_not_configured") {
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "codex_unavailable") {
 		t.Fatalf("want explicit not-configured state, got %s", recorder.Body.String())
 	}
-	if strings.Contains(recorder.Body.String(), "findings") {
+	if strings.Contains(recorder.Body.String(), `"text"`) {
 		t.Fatal("unconfigured agent must not return fabricated findings")
 	}
 }
@@ -116,26 +115,26 @@ func TestAnalysisValidatesEnvelope(t *testing.T) {
 	}
 }
 
-type testAnalyzer struct{ received *document.Document }
+type testAnalyzer struct{ received *json.RawMessage }
 
-func (a testAnalyzer) Analyze(_ context.Context, d document.Document) (analysis.Result, error) {
+func (a testAnalyzer) Analyze(_ context.Context, d json.RawMessage) (analysis.Result, error) {
 	*a.received = d
-	return analysis.Result{Summary: "仅用于接口测试"}, nil
+	return analysis.Result{Text: "仅用于接口测试\n原始回复"}, nil
 }
 
 func TestAnalyzerReceivesWholeDocument(t *testing.T) {
-	var received document.Document
+	var received json.RawMessage
 	handler := New(Options{Analyzer: testAnalyzer{received: &received}})
 	payload := `{"schemaVersion":1,"fileName":"房源.xlsx","fields":[{"id":"f1","label":"尚未定义的新项目","value":"原文","sheet":"Sheet1","cell":"B8"}]}`
 	r := httptest.NewRequest(http.MethodPost, "/api/analyze", strings.NewReader(payload))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
-	if w.Code != http.StatusOK || len(received.Fields) != 1 || received.Fields[0].Label != "尚未定义的新项目" || received.Fields[0].Cell != "B8" {
-		t.Fatal("analyzer did not receive the dynamic fields")
+	if w.Code != http.StatusOK || string(received) != payload {
+		t.Fatal("analyzer did not receive the exact request bytes")
 	}
-	if !strings.Contains(w.Body.String(), `"findings":[]`) || !strings.Contains(w.Body.String(), `"missingInformation":[]`) {
-		t.Fatal("empty result lists must serialize as arrays")
+	if !strings.Contains(w.Body.String(), `"text":"仅用于接口测试\n原始回复"`) {
+		t.Fatal("original response text was not preserved")
 	}
 }
 

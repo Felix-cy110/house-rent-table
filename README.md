@@ -1,20 +1,33 @@
 # 租房信息检查
 
-Go + TypeScript 的最小 Web 应用：上传填写好的 Excel，查看识别的房源与费用信息，再调用分析接口。
+Go + TypeScript 的最小 Web 应用：上传填写好的 Excel，核对解析内容，登录 Codex，点击“发送并分析”查看回复。
 
-目前支持文件选择、拖放上传、动态字段预览、重复项目提示和模板下载。**真实 Agent、判断 skill 和数据库暂未接入**。点击“开始检查”会显示分析暂未开放，不会生成模拟风险判断。
+通过官方 Codex App Server 提供 ChatGPT OAuth / API Key 登录和真实分析调用。**自定义《租房组成判断.md》和数据库尚未接入**，本轮仅提供基础中文分析指引，不预设风险规则或伪造结果。
 
 ## 启动应用
 
-需要 Go 1.25+、Node.js 22.12+。在仓库根目录执行：
+需要 Go 1.25+、Node.js 22.12+ 和 Codex CLI。本轮真实协议检查使用 `codex-cli 0.153.4`；App Server 协议会随 CLI 版本变化，其他版本需验证兼容性。在仓库根目录执行：
 
 ```sh
+npm install -g @openai/codex@0.153.4
 npm --prefix web ci
 npm --prefix web run build
 go run ./cmd/server
 ```
 
 打开 <http://127.0.0.1:8080>。Go 同时提供 API 与构建后的前端，不需要另装 Web 服务器。
+
+1. 在页面选择 **OAuth 登录（ChatGPT）**，点击返回的“打开授权页面”，在官方页面完成授权；页面会自动更新状态。也可以展开 **使用 API Key**，输入 OpenAI API Key 后连接。
+2. 上传 Excel 并核对字段。可展开“查看将发送的完整内容”，查看实际发送的 JSON。
+3. 点击 **发送并分析**。Go 校验后将请求体完整作为 Codex 用户消息，等待最终回复；最长等待 3 分钟，可取消。新文件或刷新会清空页面内容。
+
+OAuth 的本地回调要求浏览器和 Go 服务运行在同一台机器。当前为本机单用户应用，同一服务的浏览器标签页共用 Codex 登录状态；仅允许 localhost / loopback 地址，不提供远程或多用户部署。
+
+登录凭据由 Codex 保存于本应用独立的配置目录，默认是系统用户配置目录下的 `house-rent-table/codex`（Windows：`%APPDATA%/house-rent-table/codex`）。浏览器不写入 localStorage/sessionStorage，API Key 提交后立即清空输入。退出登录由 Codex 清除对应凭据。不会读取或覆盖日常 `~/.codex` 登录，也不继承宿主进程的 `CODEX_*` / `OPENAI_*` 凭据变量。该目录可能包含凭据文件，不应提交到 Git。
+
+可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；不指定模型时使用该 Codex 版本的默认模型。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。API Key 登记成功代表凭据已交给 Codex，额度、网络和模型访问权限仍需由真实分析请求验证。
+
+接入依据：[官方 Codex App Server 的登录与会话协议](https://learn.chatgpt.com/docs/app-server)、[官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 
 开发时，两个终端分别运行：
 
@@ -26,7 +39,7 @@ go run ./cmd/server
 npm --prefix web run dev
 ```
 
-打开 <http://127.0.0.1:5173>，开发服务器把 `/api` 请求代理到 Go 的 8080 端口。服务默认只监听本机，可通过 `-addr`、`-web-dir`、`-template` 参数调整地址、前端目录和模板文件。
+打开 <http://127.0.0.1:5173>，开发服务器把 `/api` 请求代理到 Go 的 8080 端口。可通过 `-addr`、`-web-dir`、`-template` 参数调整本机地址、前端目录和模板文件。
 
 ## 表格格式
 
@@ -61,11 +74,15 @@ npm --prefix web run dev
 
 `id` 在本次文档中唯一，供风险证据引用；不是跨文件稳定的业务编码。`schemaVersion` 描述协议结构，不随租房项目增减而改变。
 
-当前没有持久化。后端在请求中处理文件，解析器临时文件在处理结束后清理；前端只在内存中保留本次导入，清空或刷新后移除，不写入浏览器本地存储。
+当前没有业务数据库。后端在请求中处理文件，解析器临时文件在处理结束后清理；前端只在内存中保留本次导入和回复，清空或刷新后移除。点击发送后，数据交由 Codex/OpenAI 处理。每次分析使用独立的 `ephemeral` 会话，关闭 Codex 命令历史保存；Codex 自身仍会管理登录凭据及运行所需配置和缓存。
 
 后续接 MySQL 时，建议普通列保存 ID、文件名、创建时间等元数据，`JSON` 列保存文档快照。分析结果单独记录，并关联文档与 skill 版本。同一份表可以重复分析。需要按月租等字段高效筛选时，再增加规范化列或生成列索引；当前没有添加建表脚本或数据库依赖。
 
-Agent 的接入点是 `internal/analysis.Analyzer`，接收完整 `Document`，返回摘要、风险项、依据字段 ID 和待确认信息。当前实现返回 `ErrNotConfigured`。后续在这里接入《租房组成判断.md》及模型，不需要改变上传和预览逻辑。Excel 内容应作为待分析数据，不应被当作 Agent 指令执行。
+Agent 的接入点是 `internal/analysis.Analyzer`：接收校验过的原始 JSON 请求体，返回 `{ "text": "Codex 的最终回复" }`。`internal/codex` 使用 stdio JSON-RPC 管理官方 `codex app-server`，通过 `thread/start` 和 `turn/start` 发起分析。分析指引通过独立的 `developerInstructions` 传递，不拼入用户数据。保留字段顺序、重复名称、空值、换行和来源，既不归一化金额，也不摘要或截断数据；超出限制则明确报错。
+
+只有 `turn/completed` 的状态为 `completed` 时才返回成功，失败或中断不会将部分回复当作分析结论。页面用纯文本呈现回复。更换文件、刷新和取消会中止旧请求，后端通知 Codex 中断；一次只允许一项分析或登录变更，避免分析过程中切换账号。
+
+Codex 在独立工作目录、只读沙箱下运行，关闭 shell、联网搜索及多 Agent 功能，拒绝额外工具审批；本轮用途只是根据当前输入给出文本回复。后续可在适配层接入自定义 skill，而无需修改 Excel 动态字段协议。
 
 ## HTTP 接口
 
@@ -74,9 +91,12 @@ Agent 的接入点是 `internal/analysis.Analyzer`，接收完整 `Document`，�
 | `GET /api/health` | 无 | 返回服务状态 |
 | `GET /api/template` | 无 | 下载仓库中的空白模板 |
 | `POST /api/import` | `multipart/form-data`，单个文件字段 `file` | 返回 `{ document, warnings }` |
-| `POST /api/analyze` | 上述 `Document` JSON | 校验文档，返回 HTTP 501 和 `analysis_not_configured` |
+| `GET /api/codex/account` | 无 | 返回登录方式、状态和授权是否等待中，不返回凭据 |
+| `POST /api/codex/login` | `{ "type": "chatgpt" }` 或 `{ "type": "apiKey", "apiKey": "..." }` | 发起官方 OAuth 或登记 API Key；OAuth 返回授权 URL |
+| `POST /api/codex/logout` | 无 | 取消等待中的授权并退出当前登录 |
+| `POST /api/analyze` | 上述 `Document` JSON | 原文发送至 Codex，成功返回 `{ "text": "..." }` |
 
-错误格式为 `{ "error": { "code": "...", "message": "中文说明" } }`。分析接口已定义成功返回结构，但生产实现没有虚构的分析结果。测试中的分析结果只用于验证接口和展示组件。
+错误格式为 `{ "error": { "code": "...", "message": "中文说明" } }`。未登录返回 401，忙碌返回 409，Codex 不可用返回 503，超时返回 504，上游失败返回 502。不会将上游可能含凭据的原始错误直接返回浏览器。API 响应禁用缓存，并检查跨来源浏览器请求。
 
 ## 开发检查
 
@@ -91,7 +111,17 @@ npx playwright install chromium --only-shell
 npm run test:e2e
 ```
 
-Go 测试覆盖动态项目、空白与零、重复名称、原文和来源、公式/多列/多表校验、文件限制、HTTP 上传及分析接口。浏览器测试会启动 Go 服务，覆盖真实上传、更换同名文件、错误恢复、刷新清空、文本安全展示、窄屏、请求竞争、结果组件和模板下载。
+Go 测试覆盖 Excel 导入、HTTP 校验、Codex stdio 协议、原文输入/输出、登录与取消、请求互斥、分析中断和失败。常规测试使用专用协议替身，不调用付费模型。浏览器测试启动真实 Go 服务测试上传；登录和分析响应由测试拦截，覆盖两种登录交互、完整 JSON 发送、错误恢复、取消、文本展示、窄屏和模板下载。
+
+可选的真实 CLI 协议检查（PowerShell）：
+
+```powershell
+$env:RENT_CODEX_SMOKE = '1'
+go test ./internal/codex -run TestInstalledCodexProtocol -v -count=1
+Remove-Item Env:RENT_CODEX_SMOKE
+```
+
+该检查使用临时独立配置，验证握手、OAuth 发起/取消、占位 API Key 登记/退出和临时会话创建；不会提交推理任务，也不证明真实账号的模型调用成功。真实分析需要在应用页面用自己的 OAuth 或有效 API Key 登录后验证。
 
 ## 空白模板
 

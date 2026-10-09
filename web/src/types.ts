@@ -17,17 +17,9 @@ export interface ImportResult {
   warnings: string[];
 }
 
-export interface Finding {
-  id: string;
-  severity: 'high' | 'medium' | 'low';
-  title: string;
-  description: string;
-  evidenceFieldIds: string[];
-  followUp: string;
+export interface AnalysisResult {
+  text: string;
 }
 
-export interface AnalysisResult {
-  summary: string;
-  findings: Finding[];
-  missingInformation: { label: string; reason: string }[];
-}
+export interface CodexAccount { loggedIn: boolean; authType?: string; email?: string; pending: boolean; error?: string }
+export interface CodexLogin { type: 'chatgpt' | 'apiKey'; authUrl?: string }
