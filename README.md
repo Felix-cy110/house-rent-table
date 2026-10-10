@@ -182,3 +182,15 @@ Remove-Item Env:RENT_CODEX_SMOKE
 ## 维护约定
 
 Git 提交和 PR 标题使用 `type(scope): 中文描述`。PR 正文用中文说明原有问题、原因、解决方案以及实际测试方法和结果。
+
+## 自动检查
+
+GitHub Actions 会在推送、提交 PR 或手动触发时检查 README 中的模板下载链接、XLSX 的 ZIP/XML 完整性，以及单工作表、无公式、无宏、无外部工作簿链接和填写列为空白的约定。检查不限定填写项目数量。
+
+本地使用 Python 3.11 或更新版本运行，无需安装额外依赖：
+
+```bash
+python .github/scripts/check_template.py
+```
+
+自动检查不验证 Excel、WPS 等软件中的显示效果，调整版式后仍需打开文件确认。
