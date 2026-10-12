@@ -55,16 +55,24 @@ def check_template(root):
     shared_strings = [] if strings is None else [
         "".join(item.itertext()) for item in strings.findall("s:si", NS)
     ]
+    labels = {}
     for cell in sheet.findall(".//s:sheetData/s:row/s:c", NS):
         address = cell.get("r", "")
-        if not re.fullmatch(r"B[1-9]\d*", address) or address == "B1":
-            continue
         value = cell.findtext("s:v", default="", namespaces=NS)
         if cell.get("t") == "s" and value:
             value = shared_strings[int(value)]
         elif cell.get("t") == "inlineStr":
             value = "".join(cell.find("s:is", NS).itertext())
-        require(not value.strip(), f"填写区域应为空白：{address}")
+        if re.fullmatch(r"A[1-9]\d*", address):
+            labels[int(address[1:])] = value.strip()
+        elif re.fullmatch(r"B[1-9]\d*", address) and address != "B1":
+            require(not value.strip(), f"填写区域应为空白：{address}")
+
+    first_month = [row for row, label in labels.items() if label == "首月总共要付多少"]
+    monthly = [row for row, label in labels.items() if label == "以后每个月要付多少钱"]
+    require(len(first_month) == 1, "模板应包含一项“首月总共要付多少”")
+    require(len(monthly) == 1, "模板应包含一项“以后每个月要付多少钱”")
+    require(monthly[0] == first_month[0] + 1, "每月费用应紧接在首月费用下方")
 
     print(f"检查通过：{links[0]}")
 

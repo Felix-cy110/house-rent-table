@@ -221,6 +221,20 @@ func TestRepositoryTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expectedLabels := []string{
+		"房租多少钱一个月", "押几付几", "中介费多少", "水费", "电费", "保洁费",
+		"物业费多少", "燃气费", "首月总共要付多少", "以后每个月要付多少钱", "小区地点", "中介姓名",
+	}
+	if len(result.Document.Fields) != len(expectedLabels) {
+		t.Fatalf("template fields: want %d, got %d", len(expectedLabels), len(result.Document.Fields))
+	}
+	for i, label := range expectedLabels {
+		field := result.Document.Fields[i]
+		cell, _ := excelize.CoordinatesToCellName(2, i+2)
+		if field.Label != label || field.Sheet != "Sheet1" || field.Cell != cell {
+			t.Fatalf("template field %d: want %q at Sheet1!%s, got %+v", i, label, cell, field)
+		}
+	}
 	for _, field := range result.Document.Fields {
 		if field.Value != nil {
 			t.Fatal("public template must remain blank")
@@ -259,4 +273,41 @@ func TestRepositoryTemplate(t *testing.T) {
 	if got.Label != location.Label || got.Cell != location.Cell || got.Sheet != location.Sheet || got.Value == nil || *got.Value != "测试小区 2 栋" {
 		t.Fatalf("location value or source changed: %+v", got)
 	}
+	monthly := result.Document.Fields[9]
+	for _, tt := range []struct {
+		name  string
+		value any
+		want  *string
+	}{
+		{"blank", nil, nil},
+		{"zero", 0, stringPointer("0")},
+		{"amount", 3150.5, stringPointer("3150.5")},
+		{"original text", "  3150元/月，含物业费\n水电按实际用量另付  ", stringPointer("  3150元/月，含物业费\n水电按实际用量另付  ")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := workbook.SetCellValue(monthly.Sheet, monthly.Cell, tt.value); err != nil {
+				t.Fatal(err)
+			}
+			buffer, err := workbook.WriteToBuffer()
+			if err != nil {
+				t.Fatal(err)
+			}
+			filled, err := Parse(context.Background(), buffer, "filled.xlsx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := filled.Document.Fields[9]
+			if got.ID != monthly.ID || got.Label != monthly.Label || got.Cell != monthly.Cell || got.Sheet != monthly.Sheet {
+				t.Fatalf("monthly payment source changed: %+v", got)
+			}
+			if (got.Value == nil) != (tt.want == nil) || (tt.want != nil && *got.Value != *tt.want) {
+				t.Fatalf("monthly payment value changed: got %v, want %v", got.Value, tt.want)
+			}
+			if field := filled.Document.Fields[locationIndex]; field.Value == nil || *field.Value != "测试小区 2 栋" {
+				t.Fatal("monthly payment overwrote the following location field")
+			}
+		})
+	}
 }
+
+func stringPointer(value string) *string { return &value }

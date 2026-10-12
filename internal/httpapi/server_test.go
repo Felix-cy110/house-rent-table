@@ -14,6 +14,7 @@ import (
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
 	"github.com/Felix-cy110/house-rent-table/internal/importer"
 	"github.com/Felix-cy110/house-rent-table/internal/testxlsx"
+	"github.com/xuri/excelize/v2"
 )
 
 func uploadRequest(t *testing.T, filename string, content []byte) *http.Request {
@@ -139,13 +140,60 @@ func TestAnalyzerReceivesWholeDocument(t *testing.T) {
 }
 
 func TestTemplateDownload(t *testing.T) {
-	handler := New(Options{TemplatePath: "../../outputs/01a11ae7-a608-7692-9440-5edb4b06cfa9/租房信息模板.xlsx"})
+	var received json.RawMessage
+	handler := New(Options{
+		TemplatePath: "../../outputs/01a11ae7-a608-7692-9440-5edb4b06cfa9/租房信息模板.xlsx",
+		Analyzer:     testAnalyzer{received: &received},
+	})
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/template", nil))
 	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment") {
 		t.Fatalf("template download failed: %d", w.Code)
 	}
-	if _, err := io.Copy(io.Discard, w.Result().Body); err != nil {
+	body, err := io.ReadAll(w.Result().Body)
+	if err != nil {
 		t.Fatal(err)
+	}
+	workbook, err := excelize.OpenReader(bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workbook.Close()
+	value := "3150元/月，含物业费\n水电按实际用量另付"
+	if err := workbook.SetCellValue("Sheet1", "B11", value); err != nil {
+		t.Fatal(err)
+	}
+	filled, err := workbook.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, uploadRequest(t, "每月费用.xlsx", filled.Bytes()))
+	if w.Code != http.StatusOK {
+		t.Fatalf("downloaded template import failed: %d %s", w.Code, w.Body.String())
+	}
+	var imported importer.Result
+	if err := json.Unmarshal(w.Body.Bytes(), &imported); err != nil {
+		t.Fatal(err)
+	}
+	if len(imported.Document.Fields) != 12 {
+		t.Fatalf("downloaded template field count: %d", len(imported.Document.Fields))
+	}
+	monthly := imported.Document.Fields[9]
+	if imported.Document.Fields[8].Label != "首月总共要付多少" || monthly.Label != "以后每个月要付多少钱" ||
+		monthly.Value == nil || *monthly.Value != value || monthly.Sheet != "Sheet1" || monthly.Cell != "B11" ||
+		imported.Document.Fields[10].Label != "小区地点" || imported.Document.Fields[10].Cell != "B12" {
+		t.Fatalf("monthly payment or adjacent fields changed: %+v", imported.Document.Fields)
+	}
+	payload, err := json.Marshal(imported.Document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/analyze", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, request)
+	if w.Code != http.StatusOK || !bytes.Equal(received, payload) {
+		t.Fatalf("monthly payment document was not forwarded intact: %d %s", w.Code, w.Body.String())
 	}
 }
