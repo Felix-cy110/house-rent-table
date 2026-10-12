@@ -58,6 +58,31 @@ test('说明表头下的小区地点按原顺序和来源显示', async ({ page 
   await expect(rows.nth(1).getByRole('cell')).toHaveText('未填写');
 });
 
+test('首月之后的每月费用按原文展示并发送分析', async ({ page }) => {
+  let sent: { fields: { label: string; value: string | null; cell: string }[] } | undefined;
+  await page.route('**/api/analyze', route => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { text: '测试回复' } });
+  });
+  const monthlyValue = '3150元/月，含物业费\n水电按实际用量另付';
+  await page.goto('/');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([
+    ['详细填写，不要含糊', '数值'], ['首月总共要付多少', '9000元'],
+    ['以后每个月要付多少钱', monthlyValue], ['小区地点', '测试小区'], ['中介姓名', null],
+  ]));
+  const rows = page.locator('#field-list tr');
+  await expect(rows).toHaveCount(4);
+  await expect(rows.nth(0)).toContainText('首月总共要付多少');
+  await expect(rows.nth(1)).toContainText('以后每个月要付多少钱');
+  await expect(rows.nth(1)).toContainText('Sheet1 · B3');
+  expect(await rows.nth(1).getByRole('cell').textContent()).toBe(monthlyValue);
+  await expect(rows.nth(2)).toContainText('小区地点');
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  await expect(page.locator('.codex-response')).toHaveText('测试回复');
+  expect(sent?.fields.map(field => field.label)).toEqual(['首月总共要付多少', '以后每个月要付多少钱', '小区地点', '中介姓名']);
+  expect(sent?.fields[1]).toMatchObject({ value: monthlyValue, cell: 'B3' });
+});
+
 test('错误文件或额外列给出提示并清空上一份结果', async ({ page }) => {
   await page.goto('/');
   const input = page.getByLabel('选择 Excel 文件');
@@ -148,11 +173,14 @@ test('空白模板下载后可重新上传，说明表头不作为业务字段',
   const response = await imported;
   expect(response.status()).toBe(200);
   const { document } = await response.json();
-  expect(document.fields.length).toBeGreaterThan(0);
+  expect(document.fields.length).toBe(12);
   expect(document.fields.every((field: { cell: string; value: string | null }) => field.cell !== 'B1' && field.value === null)).toBe(true);
   await expect(page.getByText(`${document.fields.length} 个项目，${document.fields.length} 项未填写`)).toBeVisible();
   await expect(page.locator('#field-list tr')).toHaveCount(document.fields.length);
   await expect(page.getByRole('cell', { name: '未填写', exact: true })).toHaveCount(document.fields.length);
+  expect(document.fields[8]).toMatchObject({ label: '首月总共要付多少', cell: 'B10' });
+  expect(document.fields[9]).toMatchObject({ label: '以后每个月要付多少钱', value: null, cell: 'B11' });
+  await expect(page.locator('#field-list tr').nth(9)).toContainText('以后每个月要付多少钱');
   const locationIndex = document.fields.findIndex((field: { label: string }) => field.label === '小区地点');
   expect(locationIndex).toBeGreaterThanOrEqual(0);
   expect(document.fields[locationIndex + 1]?.label).toBe('中介姓名');
