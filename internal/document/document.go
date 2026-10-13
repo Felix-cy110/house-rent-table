@@ -18,6 +18,7 @@ const (
 type Field struct {
 	ID    string  `json:"id"`
 	Label string  `json:"label"`
+	Bold  bool    `json:"bold"` // A-column label is bold: a calculation target.
 	Value *string `json:"value"`
 	Sheet string  `json:"sheet"`
 	Cell  string  `json:"cell"`

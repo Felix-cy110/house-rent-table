@@ -239,6 +239,9 @@ func TestRepositoryTemplate(t *testing.T) {
 		if field.Value != nil {
 			t.Fatal("public template must remain blank")
 		}
+		if field.Bold != (field.Cell == "B10") {
+			t.Fatalf("template must mark only the first-payment label for calculation: %+v", field)
+		}
 	}
 	locationIndex := -1
 	for i, field := range result.Document.Fields {

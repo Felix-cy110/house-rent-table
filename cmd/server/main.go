@@ -23,12 +23,16 @@ func main() {
 	codexBinary := flag.String("codex-bin", "", "optional native Codex executable path")
 	codexHome := flag.String("codex-home", "", "app-specific Codex credential/config directory")
 	codexModel := flag.String("codex-model", "", "optional Codex model override")
+	rentTolerance := flag.Int("rent-premium-tolerance", 20, "rent premium tolerance percent, 0 to 100 (a review hint, not a market standard)")
 	flag.Parse()
+	if *rentTolerance < 0 || *rentTolerance > 100 {
+		log.Fatal("租金溢价容忍值必须在 0 至 100 之间")
+	}
 	host, _, err := net.SplitHostPort(*addr)
 	if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
 		log.Fatal("本轮仅支持本机单用户运行，请使用 127.0.0.1 或 localhost 监听地址")
 	}
-	agent := codex.New(codex.Options{Binary: *codexBinary, Home: *codexHome, Model: *codexModel})
+	agent := codex.New(codex.Options{Binary: *codexBinary, Home: *codexHome, Model: *codexModel, RentPremiumTolerance: rentTolerance})
 	defer agent.Close()
 	if *template == "" {
 		matches, _ := filepath.Glob("outputs/*/租房信息模板.xlsx")
@@ -40,7 +44,7 @@ func main() {
 		Addr:              *addr,
 		Handler:           httpapi.New(httpapi.Options{Analyzer: agent, Auth: agent, LocalOnly: true, WebDir: *webDir, TemplatePath: *template}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
-		WriteTimeout: 4 * time.Minute, IdleTimeout: 60 * time.Second,
+		WriteTimeout: 6 * time.Minute, IdleTimeout: 60 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

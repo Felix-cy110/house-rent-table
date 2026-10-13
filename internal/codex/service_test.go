@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
+	"github.com/Felix-cy110/house-rent-table/internal/review"
+	"github.com/Felix-cy110/house-rent-table/skills"
 )
 
 // This test executable also acts as a deterministic stdio protocol peer. No
@@ -25,6 +27,8 @@ func TestMain(m *testing.M) {
 }
 
 func fakeServer() {
+	args, _ := json.Marshal(os.Args[1:])
+	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "args.json"), args, 0600)
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	loggedIn := false
@@ -43,6 +47,7 @@ func fakeServer() {
 		}
 		switch req.Method {
 		case "initialize":
+			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "initialize.json"), req.Params, 0600)
 			respond(map[string]string{"userAgent": "test"})
 		case "initialized":
 		case "account/read":
@@ -74,6 +79,7 @@ func fakeServer() {
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "thread.json"), req.Params, 0600)
 			respond(map[string]any{"thread": map[string]string{"id": "thread-test"}})
 		case "turn/start":
+			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "turn.json"), req.Params, 0600)
 			var params struct {
 				Input []struct {
 					Text string `json:"text"`
@@ -85,6 +91,17 @@ func fakeServer() {
 			if os.Getenv("RENT_CODEX_SCENARIO") == "wait" {
 				continue
 			}
+			// A server request must be answered while the turn is active, even
+			// when unrelated notifications are interleaved on the same stream.
+			_ = encoder.Encode(map[string]any{"id": "calc-1", "method": "item/tool/call", "params": map[string]any{
+				"threadId": "thread-test", "turnId": "turn-test", "callId": "calc-1", "tool": review.ToolName,
+				"arguments": map[string]any{"calculations": []review.Calculation{{Label: "首次付款", Expression: "3000+3000*3+300"}}},
+			}})
+			var reply json.RawMessage
+			if decoder.Decode(&reply) != nil {
+				return
+			}
+			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "calculation.json"), reply, 0600)
 			// Other threads and commentary must not become the final response.
 			notify("item/completed", map[string]any{"threadId": "other", "turnId": "turn-test", "item": map[string]string{"type": "agentMessage", "text": "别的表格"}})
 			notify("item/completed", map[string]any{"threadId": "thread-test", "turnId": "turn-test", "item": map[string]string{"type": "agentMessage", "phase": "commentary", "text": "处理中"}})
@@ -129,8 +146,8 @@ func TestProtocolLoginForwardAndLogout(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := "{\n  \"schemaVersion\": 1, \"fileName\": \"测试.xlsx\", \"fields\": [\n" +
-		`{"id":"f1","label":"未来项目","value":"  原文\n0 < > &","sheet":"S","cell":"B2"},` +
-		`{"id":"f2","label":"未来项目","value":null,"sheet":"S","cell":"B3"}]}`
+		`{"id":"f1","label":"未来项目","bold":true,"value":"  原文\n0 < > &","sheet":"S","cell":"B2"},` +
+		`{"id":"f2","label":"未来项目","bold":false,"value":null,"sheet":"S","cell":"B3"}]}`
 	result, err := s.Analyze(ctx, json.RawMessage(payload))
 	if err != nil {
 		t.Fatal(err)
@@ -148,8 +165,50 @@ func TestProtocolLoginForwardAndLogout(t *testing.T) {
 	thread, _ := os.ReadFile(filepath.Join(capture, "thread.json"))
 	var params map[string]any
 	_ = json.Unmarshal(thread, &params)
-	if params["ephemeral"] != true || params["sandbox"] != "read-only" || params["developerInstructions"] != instructions {
+	if params["ephemeral"] != true || params["sandbox"] != "read-only" || !strings.Contains(params["developerInstructions"].(string), instructions) || len(params["dynamicTools"].([]any)) != 1 {
 		t.Fatal("thread configuration missing")
+	}
+	turn, _ := os.ReadFile(filepath.Join(capture, "turn.json"))
+	var turnParams struct {
+		Input []struct{ Type, Name, Path string }
+	}
+	if json.Unmarshal(turn, &turnParams) != nil || len(turnParams.Input) != 2 || turnParams.Input[1].Type != "skill" || turnParams.Input[1].Name != skills.Name {
+		t.Fatalf("missing explicit skill: %s", turn)
+	}
+	installed, err := os.ReadFile(turnParams.Input[1].Path)
+	if err != nil || !strings.Contains(string(installed), "name: rental-review") {
+		t.Fatal("skill not installed")
+	}
+	args, _ := os.ReadFile(filepath.Join(capture, "args.json"))
+	var arguments []string
+	_ = json.Unmarshal(args, &arguments)
+	if !strings.Contains(strings.Join(arguments, " "), `web_search="live"`) {
+		t.Fatal("live search disabled")
+	}
+	initData, _ := os.ReadFile(filepath.Join(capture, "initialize.json"))
+	var initParams struct {
+		Capabilities struct {
+			Experimental bool `json:"experimentalApi"`
+		}
+	}
+	_ = json.Unmarshal(initData, &initParams)
+	if !initParams.Capabilities.Experimental {
+		t.Fatal("dynamic tools require experimental capability")
+	}
+	calculated, _ := os.ReadFile(filepath.Join(capture, "calculation.json"))
+	var reply struct {
+		Result struct {
+			Success      bool
+			ContentItems []struct{ Text string }
+		}
+	}
+	if json.Unmarshal(calculated, &reply) != nil || !reply.Result.Success || len(reply.Result.ContentItems) != 1 {
+		t.Fatalf("tool reply: %s", calculated)
+	}
+	var calculation struct{ Calculations []review.CalculationResult }
+	_ = json.Unmarshal([]byte(reply.Result.ContentItems[0].Text), &calculation)
+	if len(calculation.Calculations) != 1 || calculation.Calculations[0].Rounded != "12300.00" {
+		t.Fatalf("wrong calculation: %+v", calculation)
 	}
 	if err := s.Logout(ctx); err != nil {
 		t.Fatal(err)
@@ -284,11 +343,34 @@ func TestInstalledCodexProtocol(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"thread"`
 	}
-	if err := c.call(ctx, "thread/start", map[string]any{"cwd": s.workDir, "ephemeral": true, "sandbox": "read-only", "approvalPolicy": "never", "developerInstructions": instructions}, &thread); err != nil {
+	if err := c.call(ctx, "thread/start", s.threadParams(), &thread); err != nil {
 		t.Fatalf("thread/start failed: %v", err)
 	}
 	if thread.Thread.ID == "" {
 		t.Fatal("missing thread ID")
+	}
+	var listed struct {
+		Data []struct {
+			Skills []struct{ Name, Path string }
+			Errors []json.RawMessage
+		}
+	}
+	if err := c.call(ctx, "skills/list", map[string]any{"cwds": []string{s.workDir}, "forceReload": true}, &listed); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range listed.Data {
+		if len(entry.Errors) > 0 {
+			t.Fatalf("skill errors: %s", entry.Errors)
+		}
+		for _, skill := range entry.Skills {
+			if skill.Name == skills.Name && filepath.Clean(skill.Path) == filepath.Clean(s.skillPath) {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("bundled skill not discovered: %+v", listed)
 	}
 	if err := c.call(ctx, "thread/unsubscribe", map[string]string{"threadId": thread.Thread.ID}, nil); err != nil {
 		t.Fatal(err)
@@ -296,5 +378,5 @@ func TestInstalledCodexProtocol(t *testing.T) {
 	if err := s.Logout(ctx); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("Installed Codex initialize / OAuth start-cancel / API key registration-logout / ephemeral thread passed; no inference performed")
+	fmt.Println("Installed Codex initialize / OAuth start-cancel / API key registration-logout / dynamic-tool thread / skill discovery passed; no inference performed")
 }

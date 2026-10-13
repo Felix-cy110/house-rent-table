@@ -69,7 +69,7 @@ func New(opts Options) http.Handler {
 			writeError(w, http.StatusBadRequest, "invalid_document", err.Error())
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 		defer cancel()
 		result, err := opts.Analyzer.Analyze(ctx, json.RawMessage(payload))
 		if err != nil {

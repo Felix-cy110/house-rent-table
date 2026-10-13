@@ -1,6 +1,7 @@
 import './style.css';
 import { analyze, APIError, importExcel } from './api';
 import { setupAuth } from './auth';
+import { renderReport } from './report';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -10,7 +11,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </header>
   <section class="intro">
     <h1>先把租房信息看清楚。</h1>
-    <p>上传中介填写的 Excel，核对后交给 Codex 分析。</p>
+    <p>上传中介填写的 Excel，联网核对报价，核算加粗项目。</p>
   </section>
   <section id="codex-account" class="account-panel" aria-label="Codex 登录"></section>
   <section class="upload-panel" aria-labelledby="upload-title">
@@ -22,7 +23,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <label class="choose-file" for="excel-file">选择 Excel 文件</label>
       <input class="sr-only" id="excel-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
     </div>
-    <p class="format-hint">A 列填写项目，B 列填写内容。可以自由增减项目。</p>
+    <p class="format-hint">A 列填写项目，B 列填写内容。将需要核算的项目名整体加粗，可以自由增减项目。</p>
     <p id="upload-status" class="message" role="status" aria-live="polite" hidden></p>
     <p id="upload-error" class="message error" role="alert" hidden></p>
   </section>
@@ -32,16 +33,17 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <button id="clear-button" class="text-button" type="button">清空</button>
     </div>
     <div class="file-heading"><p id="file-name"></p><span id="field-count" class="quiet"></span></div>
+    <p id="calculation-targets" class="format-hint"></p>
     <div id="import-warnings" class="import-warnings" hidden></div>
     <div class="table-wrap"><table><caption class="sr-only">Excel 识别内容</caption><thead><tr><th scope="col">项目</th><th scope="col">填写内容</th></tr></thead><tbody id="field-list"></tbody></table></div>
     <details class="payload-preview"><summary>查看将发送的完整内容</summary><pre id="payload-content"></pre></details>
-    <div class="analysis-action"><p>点击后将完整解析内容发送给 Codex，不做删减或改写。</p><div class="analysis-buttons"><button id="cancel-analysis" class="text-button" type="button" hidden>取消分析</button><button id="analyze-button" class="primary-button" type="button">发送并分析 <span aria-hidden="true">→</span></button></div></div>
+    <div class="analysis-action"><p>完整内容与加粗标记将发送给 Codex，联网核价并核算加粗项目。</p><div class="analysis-buttons"><button id="cancel-analysis" class="text-button" type="button" hidden>取消分析</button><button id="analyze-button" class="primary-button" type="button">发送并分析 <span aria-hidden="true">→</span></button></div></div>
   </section>
   <section id="analysis-panel" class="analysis-panel" aria-labelledby="analysis-title" aria-live="polite" hidden>
     <h2 id="analysis-title"><span class="step">03</span> 检查结果</h2>
     <div id="analysis-content"></div>
   </section>
-  <footer>回复由 Codex 生成，当前尚未接入自定义判断 skill。<br /><span class="session-note">刷新页面后清空表格与回复。登录凭据由本机 Codex 单独管理。</span></footer>
+  <footer>只核查表内项目。价格对照附来源，无法核实的内容会单独说明。<br /><span class="session-note">刷新页面后清空表格与回复。登录凭据由本机 Codex 单独管理。</span></footer>
 `;
 
 setupAuth(document.getElementById('codex-account')!);
@@ -92,6 +94,7 @@ function clearDocument() {
   analyzeButton.textContent = '发送并分析 →';
   element('cancel-analysis').hidden = true;
   element('payload-content').textContent = '';
+  element('calculation-targets').textContent = '';
 }
 
 function renderFields(fields: RentalField[]) {
@@ -101,7 +104,9 @@ function renderFields(fields: RentalField[]) {
     row.id = field.id;
     const label = document.createElement('th');
     label.scope = 'row';
-    label.append(textElement('span', field.label), textElement('small', `${field.sheet} · ${field.cell}`, 'cell-source'));
+    label.append(textElement(field.bold ? 'strong' : 'span', field.label));
+    if (field.bold) label.append(textElement('small', '需核算', 'calculation-marker'));
+    label.append(textElement('small', `${field.sheet} · ${field.cell}`, 'cell-source'));
     const value = textElement('td', field.value ?? '未填写', field.value === null ? 'empty-value' : '');
     row.append(label, value);
     fragment.append(row);
@@ -131,6 +136,10 @@ async function upload(file: File) {
     const blankCount = currentDocument.fields.filter(field => field.value === null).length;
     element('field-count').textContent = `${currentDocument.fields.length} 个项目${blankCount ? `，${blankCount} 项未填写` : ''}`;
     renderFields(currentDocument.fields);
+    const targetCount = currentDocument.fields.filter(field => field.bold).length;
+    element('calculation-targets').textContent = targetCount
+      ? `${targetCount} 个加粗项目需核算，其余项目可作为依据。`
+      : '未标记核算项目；本次仅核价和检查收费矛盾。';
     const warnings = element('import-warnings');
     warnings.replaceChildren(...response.warnings.map(message => textElement('p', message)));
     warnings.hidden = !response.warnings.length;
@@ -144,7 +153,7 @@ async function upload(file: File) {
 }
 
 function renderAnalysis(result: AnalysisResult) {
-  analysisContent.replaceChildren(textElement('div', result.text, 'codex-response'));
+  analysisContent.replaceChildren(renderReport(result.text));
 }
 
 fileInput.addEventListener('change', () => {
@@ -181,7 +190,7 @@ analyzeButton.addEventListener('click', async () => {
   analyzeButton.textContent = 'Codex 正在分析…';
   element('cancel-analysis').hidden = false;
   analysisPanel.hidden = false;
-  analysisContent.replaceChildren(textElement('p', '已发送完整内容，正在等待 Codex 回复…', 'quiet'));
+  analysisContent.replaceChildren(textElement('p', '正在联网核对报价并检查标记项目，通常需要几分钟。可随时取消。', 'quiet'));
   try {
     const result = await analyze(payload, activeRequest.signal);
     if (requestGeneration === generation) renderAnalysis(result);
