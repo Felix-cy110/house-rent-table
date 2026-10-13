@@ -17,15 +17,24 @@ go run ./cmd/server
 
 打开 <http://127.0.0.1:8080>。Go 同时提供 API 与构建后的前端，不需要另装 Web 服务器。
 
-1. 在页面选择 **OAuth 登录（ChatGPT）**，点击返回的“打开授权页面”，在官方页面完成授权；页面会自动更新状态。也可以展开 **使用 API Key**，输入 OpenAI API Key 后连接。
+1. 在页面选择 **OAuth 登录（ChatGPT）**，点击返回的“打开授权页面”，在官方页面完成授权；页面会自动更新状态。也可以展开 **API Key / 自定义供应商**：只填 Key 可使用 OpenAI，使用其他供应商时填写 API 基础地址、模型和 Key；还可点击 **从 CC Switch 导入并连接**。
 2. 在 Excel 中将需要核算的 A 列项目名整体加粗，保存并上传。页面会显示加粗项目及“需核算”标记；可展开“查看将发送的完整内容”，查看实际发送的 JSON。
 3. 点击 **发送并分析**。Go 校验后将请求体完整作为 Codex 用户消息，等待最终回复；最长等待 5 分钟，可取消。新文件或刷新会清空页面内容。
 
 OAuth 的本地回调要求浏览器和 Go 服务运行在同一台机器。当前为本机单用户应用，同一服务的浏览器标签页共用 Codex 登录状态；仅允许 localhost / loopback 地址，不提供远程或多用户部署。
 
-登录凭据由 Codex 保存于本应用独立的配置目录，默认是系统用户配置目录下的 `house-rent-table/codex`（Windows：`%APPDATA%/house-rent-table/codex`）。浏览器不写入 localStorage/sessionStorage，API Key 提交后立即清空输入。退出登录由 Codex 清除对应凭据。不会读取或覆盖日常 `~/.codex` 登录，也不继承宿主进程的 `CODEX_*` / `OPENAI_*` 凭据变量。该目录可能包含凭据文件，不应提交到 Git。
+登录凭据保存于本应用独立的配置目录，默认是系统用户配置目录下的 `house-rent-table/codex`（Windows：`%APPDATA%/house-rent-table/codex`）。OAuth 和默认 OpenAI Key 由 Codex 管理；自定义供应商的地址、模型、密钥和来源保存为本应用的 `rental-provider.json`，通过临时文件替换写入，Unix 文件权限为 `0600`。浏览器不写入 localStorage/sessionStorage，API Key 提交后立即清空输入，服务响应不返回密钥。子进程通过专用环境变量获取自定义 Key，进程参数中不含 Key，也不继承宿主的 `CODEX_*` / `OPENAI_*` 凭据变量。退出登录会清除本应用保存的供应商 Key。该目录包含凭据，不应提交到 Git。
 
-可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；不指定模型时使用该 Codex 版本的默认模型。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。API Key 登记成功代表凭据已交给 Codex，额度、网络和模型访问权限仍需由真实分析请求验证。
+### 从 CC Switch 导入
+
+先在 CC Switch 的 Codex 页面启用目标供应商，然后展开本页面的 **API Key / 自定义供应商**，点击 **从 CC Switch 导入并连接**。读取的是 CC Switch 写出的生效配置 `config.toml` 和需要时的 `auth.json`；默认读取 `~/.codex`，也识别 `~/.cc-switch/settings.json` 的 `codexConfigDir`。如果使用自定义目录或仅将目录设置保存在新版 CC Switch 数据库中，请展开 **指定配置目录（可选）**，填写包含这两个文件的绝对目录，也支持 `~/...`。
+
+- 导入当前 `model_provider` 对应的地址、模型和 Key，支持 `auth.json` 的 `OPENAI_API_KEY`、供应商内的 `experimental_bearer_token` 和 `env_key`；环境变量需要在启动 Go 服务前设置。配置使用 `profile` 时按对应档案选择模型和供应商。
+- 本应用保存独立快照，重启应用后仍可使用；CC Switch 中切换供应商后，在本页面点击 **切换连接** 并重新导入。导入不会复制 OAuth token、MCP、命令或其他工具设置，也不会修改源文件。配置无效或新 app server 启动失败时保留原连接；分析进行中不能切换连接。
+- 接入的地址应提供 Responses API。若供应商需要格式转换，应先在 CC Switch 开启本地路由后导入，并保持 CC Switch 运行。当前不直接导入额外 `http_headers`、`env_http_headers` 或 `query_params`，这类配置会提示通过本地路由接入。租房完整分析还需要供应商支持流式回复、联网搜索和计算工具调用。
+- 仅有 ChatGPT OAuth 的配置会提示使用本页面的 OAuth 登录，不会转移其登录 token。切回 OAuth 时清除本应用的自定义供应商路由。
+
+可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；页面填写或从 CC Switch 导入的模型优先于 `-codex-model`。未指定模型时使用该 Codex 版本的默认模型。请勿将本应用的 `-codex-home` 指向 CC Switch 的源配置目录。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。连接成功代表本地配置加载完成，额度、网络和模型访问权限仍需由真实分析请求验证。
 
 可用 `-rent-premium-tolerance 20` 调整租金溢价提示的容忍百分比（默认 20，允许 0 至 100）。这是产品提示规则，不是市场或法律标准；只有样本可比且证据充分时才应用。该容忍值不用于首次付款的算术差额。联网分析最多等待 5 分钟，可随时取消。
 
@@ -111,11 +120,11 @@ Codex 在独立工作目录、只读沙箱下运行，开启 `web_search="live"`
 | `GET /api/template` | 无 | 下载仓库中的空白模板 |
 | `POST /api/import` | `multipart/form-data`，单个文件字段 `file` | 返回 `{ document, warnings }` |
 | `GET /api/codex/account` | 无 | 返回登录方式、状态和授权是否等待中，不返回凭据 |
-| `POST /api/codex/login` | `{ "type": "chatgpt" }` 或 `{ "type": "apiKey", "apiKey": "..." }` | 发起官方 OAuth 或登记 API Key；OAuth 返回授权 URL |
+| `POST /api/codex/login` | `{ "type": "chatgpt" }`；或 `{ "type": "apiKey", "apiKey": "...", "baseUrl": "https://example.com/v1", "model": "供应商模型名" }`；或 `{ "type": "apiKey", "source": "ccswitch", "configDir": "可选绝对目录" }` | 发起 OAuth、登记 API Key 或导入 CC Switch 生效配置；默认 OpenAI 可省略地址和模型，导入不能混入手动配置 |
 | `POST /api/codex/logout` | 无 | 取消等待中的授权并退出当前登录 |
 | `POST /api/analyze` | 上述 `Document` JSON | 原文发送至 Codex，成功返回 `{ "text": "..." }` |
 
-错误格式为 `{ "error": { "code": "...", "message": "中文说明" } }`。未登录返回 401，忙碌返回 409，Codex 不可用返回 503，超时返回 504，上游失败返回 502。不会将上游可能含凭据的原始错误直接返回浏览器。API 响应禁用缓存，并检查跨来源浏览器请求。
+错误格式为 `{ "error": { "code": "...", "message": "中文说明" } }`。配置或导入无效返回 400，未登录返回 401，忙碌返回 409，Codex 不可用返回 503，超时返回 504，上游失败返回 502。不会将上游可能含凭据的原始错误直接返回浏览器。API 响应禁用缓存，并检查跨来源浏览器请求。
 
 ## 开发检查
 
@@ -149,6 +158,18 @@ Remove-Item Env:RENT_CODEX_SMOKE
 ```
 
 该检查使用临时独立配置，验证握手、OAuth 发起/取消、占位 API Key 登记/退出、包含计算工具的临时会话创建及真实 skill 发现；不会提交推理任务，也不证明真实账号的模型调用或网页查询成功。真实分析需要在应用页面用自己的 OAuth 或有效 API Key 登录后验证。
+
+可单独验证自定义供应商与 CC Switch 导入，使用真实 Codex app server 连接测试创建的本地 Responses 服务：
+
+```powershell
+$env:RENT_CODEX_SMOKE = '1'
+go test ./internal/codex -run '^TestInstalledCodexCustomProvider$' -v -count=1
+Remove-Item Env:RENT_CODEX_SMOKE
+```
+
+此测试分别通过手动配置和 CC Switch 生效文件导入，检查请求地址、Bearer Key、模型、搜索与计算工具声明，以及流式回复和退出连接；只用占位 Key 和本地模拟回复，不调用真实供应商。配置测试另外覆盖环境变量与内嵌 token、活动供应商与配置档案选择、切换失败保留原连接、重启恢复、切回 OAuth、源文件不被改写和无效配置错误脱敏。
+
+2026-10-13 验证：Go 全量测试、`go vet ./...`、模板检查、前端构建和 18 项浏览器测试通过；最终布局调整后重新通过 6 项登录/连接浏览器测试。上述本地供应商测试在 `codex-cli 0.153.4` 上的两种接入方式均通过。桌面 1280px 和手机 390px 布局已检查，手机页面没有横向溢出。未使用真实第三方密钥验证额度、模型权限或实际联网搜索效果。
 
 行为回归时应至少覆盖：同条件房源 1000 元/月而报价 3000 元/月、物业费 300 元/年与 300 元/月冲突、正常小幅浮动、缺少地点无法查询、空白费用与零、新增收费字段、含物业后重复收费、定金抵扣以及来源冲突；还应检查仅加粗首月总额、取消该标记、改名为入住应付款、多个加粗目标及完全未标记时的行为。此类结论依赖模型与实时网页，普通自动测试只验证算术和接入协议，不能代替真实行为评估。
 

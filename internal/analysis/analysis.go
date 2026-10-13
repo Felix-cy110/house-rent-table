@@ -30,6 +30,9 @@ type Account struct {
 	Email    string `json:"email,omitempty"`
 	Pending  bool   `json:"pending"`
 	Error    string `json:"error,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Source   string `json:"source,omitempty"`
 }
 
 type Login struct {
@@ -39,7 +42,7 @@ type Login struct {
 
 type Authenticator interface {
 	Account(context.Context) (Account, error)
-	Login(context.Context, string, string) (Login, error)
+	Login(context.Context, LoginRequest) (Login, error)
 	Logout(context.Context) error
 }
 

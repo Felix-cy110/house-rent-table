@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,7 +37,9 @@ type Service struct {
 	runContext   context.Context
 }
 
-func New(opts Options) *Service { return &Service{opts: opts, gate: make(chan struct{}, 1)} }
+func New(opts Options) *Service {
+	return &Service{opts: opts, gate: make(chan struct{}, 1), loginResults: make(map[string]bool)}
+}
 
 func (s *Service) connection(ctx context.Context) (*client, error) {
 	s.startMu.Lock()
@@ -44,33 +47,55 @@ func (s *Service) connection(ctx context.Context) (*client, error) {
 	if s.client != nil && !isDone(s.client) {
 		return s.client, nil
 	}
+	home, err := s.prepareHome()
+	if err != nil {
+		return nil, err
+	}
+	provider, err := loadProvider(home)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.loginID, s.loginError = "", ""
+	s.loginResults = make(map[string]bool)
+	s.mu.Unlock()
+	c, err := s.openClient(ctx, home, provider)
+	if err != nil {
+		return nil, err
+	}
+	s.client = c
+	return c, nil
+}
+
+// Caller holds startMu. Configurations are snapshots; Account calls cannot see
+// a half-switched client or a partly written provider file.
+func (s *Service) prepareHome() (string, error) {
 	if s.opts.Home == "" {
 		root, err := os.UserConfigDir()
 		if err != nil {
-			return nil, analysis.ErrUnavailable
+			return "", analysis.ErrUnavailable
 		}
 		s.opts.Home = filepath.Join(root, "house-rent-table", "codex")
 	}
 	home, err := filepath.Abs(s.opts.Home)
 	if err != nil {
-		return nil, analysis.ErrUnavailable
+		return "", analysis.ErrUnavailable
 	}
 	if s.workDir == "" {
 		s.workDir = filepath.Join(home, "workspace")
 	}
 	if os.MkdirAll(s.workDir, 0700) != nil {
-		return nil, analysis.ErrUnavailable
+		return "", analysis.ErrUnavailable
 	}
 	s.skillPath, err = skills.Install(s.workDir)
 	if err != nil {
-		return nil, analysis.ErrUnavailable
+		return "", analysis.ErrUnavailable
 	}
-	s.mu.Lock()
-	s.loginID = ""
-	s.loginError = ""
-	s.loginResults = make(map[string]bool)
-	s.mu.Unlock()
-	c, err := start(s.opts.Binary, home, s.workDir, s.notification, s.toolRequest)
+	return home, nil
+}
+
+func (s *Service) openClient(ctx context.Context, home string, provider *providerConfig) (*client, error) {
+	c, err := start(s.opts.Binary, home, s.workDir, provider, s.notification, s.toolRequest)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +109,42 @@ func (s *Service) connection(ctx context.Context) (*client, error) {
 		c.close()
 		return nil, analysis.ErrUnavailable
 	}
+	return c, nil
+}
+
+func (s *Service) replaceProvider(ctx context.Context, provider *providerConfig) (*client, error) {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	home, err := s.prepareHome()
+	if err != nil {
+		return nil, err
+	}
+	if provider != nil && provider.originDir != "" {
+		target, targetErr := os.Stat(home)
+		source, sourceErr := os.Stat(provider.originDir)
+		if targetErr != nil || sourceErr != nil {
+			return nil, analysis.ErrUnavailable
+		}
+		if os.SameFile(target, source) {
+			return nil, &analysis.ConfigError{Message: "本应用需要独立配置目录；请将 -codex-home 与 CC Switch 的源配置目录分开后重启"}
+		}
+	}
+	c, err := s.openClient(ctx, home, provider)
+	if err != nil {
+		return nil, err
+	}
+	if err := saveProvider(home, provider); err != nil {
+		c.close()
+		return nil, err
+	}
+	if s.client != nil {
+		s.client.close()
+	}
+	s.mu.Lock()
+	s.loginID = ""
+	s.loginError = ""
+	s.loginResults = make(map[string]bool)
+	s.mu.Unlock()
 	s.client = c
 	return c, nil
 }
@@ -147,7 +208,8 @@ func (s *Service) Account(ctx context.Context) (analysis.Account, error) {
 		return analysis.Account{}, err
 	}
 	var result struct {
-		Account *struct {
+		RequiresOpenAIAuth *bool `json:"requiresOpenaiAuth"`
+		Account            *struct {
 			Type  string `json:"type"`
 			Email string `json:"email"`
 		} `json:"account"`
@@ -162,6 +224,15 @@ func (s *Service) Account(ctx context.Context) (analysis.Account, error) {
 		a.LoggedIn = true
 		a.AuthType = result.Account.Type
 		a.Email = result.Account.Email
+	}
+	if result.RequiresOpenAIAuth != nil && !*result.RequiresOpenAIAuth {
+		a.LoggedIn = true
+		a.AuthType = "apiKey"
+	}
+	if c.provider != nil {
+		a.Provider, a.Model, a.Source = c.provider.Name, c.provider.Model, c.provider.Source
+		// The active provider uses its own credential, not a cached OAuth account.
+		a.AuthType, a.Email = "apiKey", ""
 	}
 	return a, nil
 }
@@ -192,14 +263,49 @@ func (s *Service) cancelLogin(ctx context.Context, c *client) error {
 	return nil
 }
 
-func (s *Service) Login(ctx context.Context, kind, apiKey string) (analysis.Login, error) {
+func (s *Service) Login(ctx context.Context, input analysis.LoginRequest) (analysis.Login, error) {
+	if err := input.Validate(); err != nil {
+		return analysis.Login{}, err
+	}
 	if !s.acquire() {
 		return analysis.Login{}, analysis.ErrBusy
 	}
 	defer func() { <-s.gate }()
+	if input.Source == "ccswitch" || (input.Type == "apiKey" && (input.BaseURL != "" || input.Model != "")) {
+		provider := &providerConfig{Name: "自定义供应商", Source: "manual", BaseURL: input.BaseURL, Model: input.Model, APIKey: input.APIKey}
+		if input.Source == "ccswitch" {
+			userHome, err := os.UserHomeDir()
+			if err != nil {
+				return analysis.Login{}, analysis.ErrUnavailable
+			}
+			provider, err = importCCSwitch(input.ConfigDir, userHome)
+			if err != nil {
+				return analysis.Login{}, err
+			}
+		} else if provider.BaseURL == "" {
+			provider.BaseURL, provider.Name = "https://api.openai.com/v1", "OpenAI"
+		}
+		if err := provider.validate(); err != nil {
+			return analysis.Login{}, err
+		}
+		if _, err := s.replaceProvider(ctx, provider); err != nil {
+			return analysis.Login{}, err
+		}
+		return analysis.Login{Type: "apiKey"}, nil
+	}
 	c, err := s.connection(ctx)
+	var configError *analysis.ConfigError
+	if errors.As(err, &configError) {
+		c, err = s.replaceProvider(ctx, nil)
+	}
 	if err != nil {
 		return analysis.Login{}, err
+	}
+	if c.provider != nil {
+		c, err = s.replaceProvider(ctx, nil)
+		if err != nil {
+			return analysis.Login{}, err
+		}
 	}
 	if err := s.cancelLogin(ctx, c); err != nil {
 		return analysis.Login{}, err
@@ -207,9 +313,9 @@ func (s *Service) Login(ctx context.Context, kind, apiKey string) (analysis.Logi
 	s.mu.Lock()
 	s.loginResults = make(map[string]bool)
 	s.mu.Unlock()
-	params := map[string]string{"type": kind}
-	if kind == "apiKey" {
-		params["apiKey"] = apiKey
+	params := map[string]string{"type": input.Type}
+	if input.Type == "apiKey" {
+		params["apiKey"] = input.APIKey
 	}
 	var result struct {
 		Type    string `json:"type"`
@@ -246,6 +352,18 @@ func (s *Service) Logout(ctx context.Context) error {
 	}
 	if err := c.call(ctx, "account/logout", nil, nil); err != nil {
 		return err
+	}
+	if c.provider != nil {
+		s.startMu.Lock()
+		err := saveProvider(s.opts.Home, nil)
+		if err == nil {
+			c.close()
+			s.client = nil
+		}
+		s.startMu.Unlock()
+		if err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	s.loginID = ""
@@ -288,6 +406,9 @@ func (s *Service) Analyze(ctx context.Context, payload json.RawMessage) (analysi
 		return analysis.Result{}, analysis.ErrLoginRequired
 	}
 	params := s.threadParams()
+	if c.provider != nil && c.provider.Model != "" {
+		params["model"] = c.provider.Model
+	}
 	var thread struct {
 		Thread struct {
 			ID string `json:"id"`

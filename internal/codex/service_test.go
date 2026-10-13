@@ -27,6 +27,7 @@ func TestMain(m *testing.M) {
 }
 
 func fakeServer() {
+	customProvider := strings.Contains(strings.Join(os.Args, " "), "model_providers.rental_custom.requires_openai_auth=false")
 	args, _ := json.Marshal(os.Args[1:])
 	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "args.json"), args, 0600)
 	decoder := json.NewDecoder(os.Stdin)
@@ -47,6 +48,13 @@ func fakeServer() {
 		}
 		switch req.Method {
 		case "initialize":
+			if customProvider && os.Getenv("RENT_CODEX_SCENARIO") == "init-fail" {
+				_ = encoder.Encode(map[string]any{"id": req.ID, "error": map[string]any{"code": -1, "message": "test startup failure"}})
+				continue
+			}
+			if customProvider {
+				_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "provider-key"), []byte(os.Getenv(providerKeyEnv)), 0600)
+			}
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "initialize.json"), req.Params, 0600)
 			respond(map[string]string{"userAgent": "test"})
 		case "initialized":
@@ -55,7 +63,7 @@ func fakeServer() {
 			if loggedIn {
 				account = map[string]string{"type": "apiKey"}
 			}
-			respond(map[string]any{"account": account, "requiresOpenaiAuth": true})
+			respond(map[string]any{"account": account, "requiresOpenaiAuth": !customProvider})
 		case "account/login/start":
 			var params struct {
 				Type   string `json:"type"`
@@ -142,7 +150,7 @@ func TestProtocolLoginForwardAndLogout(t *testing.T) {
 	if _, err := s.Analyze(ctx, json.RawMessage(`{}`)); !errors.Is(err, analysis.ErrLoginRequired) {
 		t.Fatalf("expected login requirement: %v", err)
 	}
-	if _, err := s.Login(ctx, "apiKey", "test-only-key"); err != nil {
+	if _, err := s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "test-only-key"}); err != nil {
 		t.Fatal(err)
 	}
 	payload := "{\n  \"schemaVersion\": 1, \"fileName\": \"测试.xlsx\", \"fields\": [\n" +
@@ -223,7 +231,7 @@ func TestOAuthCanBeCanceled(t *testing.T) {
 	s, _ := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	login, err := s.Login(ctx, "chatgpt", "")
+	login, err := s.Login(ctx, analysis.LoginRequest{Type: "chatgpt", APIKey: ""})
 	if err != nil || login.AuthURL != "https://auth.openai.com/test" {
 		t.Fatalf("login: %+v %v", login, err)
 	}
@@ -245,7 +253,7 @@ func TestFailedTurnDoesNotReturnPartialSuccess(t *testing.T) {
 	s, _ := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = s.Login(ctx, "apiKey", "test-only-key")
+	_, _ = s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "test-only-key"})
 	result, err := s.Analyze(ctx, json.RawMessage(`{}`))
 	if !errors.Is(err, analysis.ErrFailed) || result.Text != "" {
 		t.Fatalf("failed turn accepted: %+v %v", result, err)
@@ -257,7 +265,7 @@ func TestOAuthCompletionBeforeResponseIsNotLost(t *testing.T) {
 	s, _ := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := s.Login(ctx, "chatgpt", ""); err != nil {
+	if _, err := s.Login(ctx, analysis.LoginRequest{Type: "chatgpt", APIKey: ""}); err != nil {
 		t.Fatal(err)
 	}
 	a, err := s.Account(ctx)
@@ -271,7 +279,7 @@ func TestCancellationInterruptsTurnAndRejectsConcurrentWork(t *testing.T) {
 	s, capture := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = s.Login(ctx, "apiKey", "test-only-key")
+	_, _ = s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "test-only-key"})
 	run, stop := context.WithCancel(ctx)
 	finished := make(chan error, 1)
 	go func() { _, err := s.Analyze(run, json.RawMessage(`{}`)); finished <- err }()
@@ -287,6 +295,9 @@ func TestCancellationInterruptsTurnAndRejectsConcurrentWork(t *testing.T) {
 	}
 	if err := s.Logout(ctx); !errors.Is(err, analysis.ErrBusy) {
 		t.Fatalf("account changed during turn: %v", err)
+	}
+	if _, err := s.Login(ctx, analysis.LoginRequest{Type: "apiKey", Source: "ccswitch", ConfigDir: t.TempDir()}); !errors.Is(err, analysis.ErrBusy) {
+		t.Fatalf("provider changed during turn: %v", err)
 	}
 	stop()
 	if err := <-finished; !errors.Is(err, context.Canceled) {
@@ -319,14 +330,14 @@ func TestInstalledCodexProtocol(t *testing.T) {
 	if err != nil || a.LoggedIn {
 		t.Fatalf("initial account: %+v %v", a, err)
 	}
-	login, err := s.Login(ctx, "chatgpt", "")
+	login, err := s.Login(ctx, analysis.LoginRequest{Type: "chatgpt", APIKey: ""})
 	if err != nil || !strings.HasPrefix(login.AuthURL, "https://") {
 		t.Fatalf("OAuth start failed: %v", err)
 	}
 	if err := s.Logout(ctx); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Login(ctx, "apiKey", "sk-test-placeholder-not-a-real-key")
+	_, err = s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "sk-test-placeholder-not-a-real-key"})
 	if err != nil {
 		t.Fatal(err)
 	}

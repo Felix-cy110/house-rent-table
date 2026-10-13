@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
@@ -39,18 +38,19 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 			writeError(w, 415, "invalid_content_type", "请使用 JSON 提交登录请求")
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
-		var input struct {
-			Type   string `json:"type"`
-			APIKey string `json:"apiKey"`
-		}
+		r.Body = http.MaxBytesReader(w, r.Body, 32<<10)
+		var input analysis.LoginRequest
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
-		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || (input.Type != "chatgpt" && input.Type != "apiKey") || (input.Type == "apiKey" && strings.TrimSpace(input.APIKey) == "") || (input.Type == "chatgpt" && input.APIKey != "") {
+		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
 			writeError(w, http.StatusBadRequest, "invalid_login", "请选择 OAuth 或填写有效的 API Key")
 			return
 		}
-		result, err := auth.Login(r.Context(), input.Type, strings.TrimSpace(input.APIKey))
+		if err := input.Validate(); err != nil {
+			writeAgentError(w, err)
+			return
+		}
+		result, err := auth.Login(r.Context(), input)
 		if err != nil {
 			writeAgentError(w, err)
 			return
@@ -67,6 +67,11 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 }
 
 func writeAgentError(w http.ResponseWriter, err error) {
+	var configError *analysis.ConfigError
+	if errors.As(err, &configError) {
+		writeError(w, http.StatusBadRequest, "invalid_provider", configError.Message)
+		return
+	}
 	switch {
 	case errors.Is(err, analysis.ErrLoginRequired):
 		writeError(w, 401, "codex_login_required", "请先登录 Codex，再发送并分析")
