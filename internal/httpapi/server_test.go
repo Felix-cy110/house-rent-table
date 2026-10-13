@@ -102,6 +102,8 @@ func TestAnalysisValidatesEnvelope(t *testing.T) {
 	for _, payload := range []string{
 		`{"schemaVersion":2,"fields":[]}`,
 		strings.Replace(valid, `"value":"0"`, `"value":0`, 1),
+		strings.Replace(valid, `"label":"月租"`, `"label":"月租","bold":"true"`, 1),
+		strings.Replace(valid, `"label":"月租"`, `"label":"月租","bold":1`, 1),
 		strings.Replace(valid, `"schemaVersion":1`, `"extra":true,"schemaVersion":1`, 1),
 		valid + ` {"extra":"second object"}`,
 		`{"schemaVersion":1,"fields":[{"id":"f1","label":"A","value":null,"sheet":"S","cell":"B1"},{"id":"f1","label":"B","value":null,"sheet":"S","cell":"B2"}]}`,
@@ -126,7 +128,7 @@ func (a testAnalyzer) Analyze(_ context.Context, d json.RawMessage) (analysis.Re
 func TestAnalyzerReceivesWholeDocument(t *testing.T) {
 	var received json.RawMessage
 	handler := New(Options{Analyzer: testAnalyzer{received: &received}})
-	payload := `{"schemaVersion":1,"fileName":"房源.xlsx","fields":[{"id":"f1","label":"尚未定义的新项目","value":"原文","sheet":"Sheet1","cell":"B8"}]}`
+	payload := `{"schemaVersion":1,"fileName":"房源.xlsx","fields":[{"id":"f1","label":"尚未定义的新项目","bold":true,"value":"原文","sheet":"Sheet1","cell":"B8"},{"id":"f2","label":"依据项目","bold":false,"value":"0","sheet":"Sheet1","cell":"B9"}]}`
 	r := httptest.NewRequest(http.MethodPost, "/api/analyze", strings.NewReader(payload))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -180,6 +182,9 @@ func TestTemplateDownload(t *testing.T) {
 		t.Fatalf("downloaded template field count: %d", len(imported.Document.Fields))
 	}
 	monthly := imported.Document.Fields[9]
+	if !imported.Document.Fields[8].Bold || monthly.Bold {
+		t.Fatal("downloaded template's bold target was lost during import")
+	}
 	if imported.Document.Fields[8].Label != "首月总共要付多少" || monthly.Label != "以后每个月要付多少钱" ||
 		monthly.Value == nil || *monthly.Value != value || monthly.Sheet != "Sheet1" || monthly.Cell != "B11" ||
 		imported.Document.Fields[10].Label != "小区地点" || imported.Document.Fields[10].Cell != "B12" {

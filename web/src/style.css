@@ -45,6 +45,8 @@ thead th:last-child { border-radius: 0 5px 5px 0; }
 tbody th, td { text-align: left; padding: 15px 14px; border-bottom: 1px solid #eef0f3; vertical-align: top; overflow-wrap: anywhere; white-space: pre-wrap; }
 tbody th { font-weight: 450; }
 .cell-source { display: block; margin-top: 6px; font-size: 11px; color: #8c96a2; font-weight: 400; }
+.calculation-marker { display: inline-block; margin-left: 8px; color: #466b9b; font-size: 11px; font-weight: 400; }
+#calculation-targets { margin: 0 0 14px; }
 .empty-value { color: #8b94a1; }
 .import-warnings { margin-bottom: 16px; padding: 8px 13px; background: #fff8ec; color: #8c642c; border-radius: 6px; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .import-warnings p { margin: 4px 0; }
@@ -78,6 +80,20 @@ summary { font-size: 12px; cursor: pointer; color: #526b88; }
 .payload-preview { margin-top: 20px; }
 .payload-preview pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; background: #f7f9fb; border-radius: 6px; }
 .codex-response { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.9; }
+.review-report { min-width: 0; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.review-report h1, .review-report h2, .review-report h3 { display: block; font-size: 16px; letter-spacing: 0; margin: 24px 0 10px; }
+.review-report > :first-child { margin-top: 0; }
+.review-report p { margin: 10px 0; }
+.review-report a { text-decoration: underline; }
+.review-report ul, .review-report ol { padding-left: 24px; }
+.review-report pre { overflow: auto; padding: 12px; background: #f7f9fb; border-radius: 6px; }
+.review-report blockquote { margin: 12px 0; padding-left: 14px; border-left: 3px solid #c5d1e0; color: #526b88; }
+.report-table { max-width: 100%; overflow-x: auto; margin: 14px 0; }
+.report-table table { min-width: 580px; table-layout: auto; font-size: 13px; }
+.report-table th, .report-table td { width: auto; padding: 10px; white-space: normal; min-width: 84px; }
+.report-table thead th:first-child { width: auto; }
+.raw-report { border-top: 1px solid #eef0f3; margin-top: 24px; padding-top: 16px; }
+.raw-report .codex-response { margin-top: 12px; }
 button:disabled { cursor: default; opacity: .6; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) {

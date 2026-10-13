@@ -131,7 +131,12 @@ func parseSheet(ctx context.Context, f *excelize.File, sheet string) ([]document
 		if len(fields) >= document.MaxFields {
 			return nil, fmt.Errorf("字段数量不能超过 %d 项", document.MaxFields)
 		}
-		field := document.Field{ID: fmt.Sprintf("field-%d", len(fields)+1), Label: label, Sheet: sheet, Cell: fmt.Sprintf("B%d", rowNumber)}
+		labelCell := fmt.Sprintf("A%d", rowNumber)
+		bold, err := labelBold(f, sheet, labelCell)
+		if err != nil {
+			return nil, err
+		}
+		field := document.Field{ID: fmt.Sprintf("field-%d", len(fields)+1), Label: label, Bold: bold, Sheet: sheet, Cell: fmt.Sprintf("B%d", rowNumber)}
 		if strings.TrimSpace(value) != "" {
 			field.Value = &value
 		}
@@ -141,6 +146,47 @@ func parseSheet(ctx context.Context, f *excelize.File, sheet string) ([]document
 		return nil, fmt.Errorf("读取工作表“%s”失败", sheet)
 	}
 	return fields, nil
+}
+
+// The label, not the entered value or a known business name, selects a target.
+// GetCellStyle resolves cell, row and column styles. Rich-text runs may override
+// that font; a partially bold label cannot be represented by a boolean safely.
+func labelBold(f *excelize.File, sheet, cell string) (bool, error) {
+	styleID, err := f.GetCellStyle(sheet, cell)
+	if err != nil {
+		return false, fmt.Errorf("无法读取 %s!%s 的加粗格式", sheet, cell)
+	}
+	style, err := f.GetStyle(styleID)
+	if err != nil {
+		return false, fmt.Errorf("无法读取 %s!%s 的加粗格式", sheet, cell)
+	}
+	baseBold := style.Font != nil && style.Font.Bold
+	runs, err := f.GetCellRichText(sheet, cell)
+	if err != nil {
+		return false, fmt.Errorf("无法读取 %s!%s 的文字格式", sheet, cell)
+	}
+	var hasBold, hasRegular bool
+	for _, run := range runs {
+		if strings.TrimSpace(run.Text) == "" {
+			continue
+		}
+		bold := baseBold
+		if run.Font != nil {
+			bold = run.Font.Bold
+		}
+		if bold {
+			hasBold = true
+		} else {
+			hasRegular = true
+		}
+	}
+	if hasBold && hasRegular {
+		return false, fmt.Errorf("%s!%s 的项目名只有部分文字加粗，请将整个项目名加粗或取消加粗，再上传", sheet, cell)
+	}
+	if hasBold || hasRegular {
+		return hasBold, nil
+	}
+	return baseBold, nil
 }
 
 func isHeader(label, value string) bool {

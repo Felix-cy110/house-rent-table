@@ -1,6 +1,7 @@
 export interface RentalField {
   id: string;
   label: string;
+  bold: boolean;
   value: string | null;
   sheet: string;
   cell: string;

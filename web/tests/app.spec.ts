@@ -148,7 +148,7 @@ test('预览的完整 JSON 原样发送，Codex 原文回复保留空格与换�
   await page.getByText('查看将发送的完整内容', { exact: true }).click();
   const preview = await page.locator('#payload-content').textContent();
   await page.getByRole('button', { name: '发送并分析' }).click();
-  await expect(page.locator('.codex-response')).toBeVisible();
+  await expect(page.locator('.review-report')).toBeVisible();
   expect(sent).toBe(preview);
   expect(JSON.parse(sent)).toEqual(document);
   expect(await page.locator('.codex-response').textContent()).toBe(answer);
@@ -178,8 +178,10 @@ test('空白模板下载后可重新上传，说明表头不作为业务字段',
   await expect(page.getByText(`${document.fields.length} 个项目，${document.fields.length} 项未填写`)).toBeVisible();
   await expect(page.locator('#field-list tr')).toHaveCount(document.fields.length);
   await expect(page.getByRole('cell', { name: '未填写', exact: true })).toHaveCount(document.fields.length);
-  expect(document.fields[8]).toMatchObject({ label: '首月总共要付多少', cell: 'B10' });
-  expect(document.fields[9]).toMatchObject({ label: '以后每个月要付多少钱', value: null, cell: 'B11' });
+  expect(document.fields[8]).toMatchObject({ label: '首月总共要付多少', bold: true, cell: 'B10' });
+  expect(document.fields[9]).toMatchObject({ label: '以后每个月要付多少钱', bold: false, value: null, cell: 'B11' });
+  await expect(page.locator('#field-list tr').nth(8).locator('strong')).toHaveText('首月总共要付多少');
+  await expect(page.locator('#calculation-targets')).toHaveText('1 个加粗项目需核算，其余项目可作为依据。');
   await expect(page.locator('#field-list tr').nth(9)).toContainText('以后每个月要付多少钱');
   const locationIndex = document.fields.findIndex((field: { label: string }) => field.label === '小区地点');
   expect(locationIndex).toBeGreaterThanOrEqual(0);

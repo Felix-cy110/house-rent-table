@@ -77,7 +77,7 @@ func executable(configured string) (string, error) {
 	return "", analysis.ErrUnavailable
 }
 
-func start(binary, home, cwd string, notify func(message)) (*client, error) {
+func start(binary, home, cwd string, notify func(message), request func(message) any) (*client, error) {
 	path, err := executable(binary)
 	if err != nil {
 		return nil, analysis.ErrUnavailable
@@ -85,7 +85,7 @@ func start(binary, home, cwd string, notify func(message)) (*client, error) {
 	cmd := exec.Command(path, "app-server", "--listen", "stdio://",
 		"-c", `cli_auth_credentials_store="file"`, "-c", `history.persistence="none"`,
 		"-c", "features.shell_tool=false", "-c", "features.apply_patch_freeform=false",
-		"-c", "features.multi_agent=false", "-c", `web_search="disabled"`,
+		"-c", "features.multi_agent=false", "-c", `web_search="live"`,
 		"-c", "apps._default.enabled=false", "-c", "project_doc_max_bytes=0")
 	cmd.Dir = cwd
 	// Never inherit another Codex session's credentials or thread context.
@@ -143,7 +143,11 @@ func start(binary, home, cwd string, notify func(message)) (*client, error) {
 				continue
 			}
 			if len(m.ID) > 0 && m.Method != "" {
-				_ = c.send(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "This application only accepts text analysis"}})
+				if m.Method == "item/tool/call" && request != nil {
+					_ = c.send(map[string]any{"id": m.ID, "result": request(m)})
+				} else {
+					_ = c.send(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "Unsupported request"}})
+				}
 			} else if len(m.ID) > 0 {
 				c.mu.Lock()
 				ch := c.pending[string(m.ID)]
