@@ -3,6 +3,7 @@ module github.com/Felix-cy110/house-rent-table
 go 1.25.0
 
 require (
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/sys v0.46.0
 )

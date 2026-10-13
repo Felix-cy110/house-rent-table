@@ -22,5 +22,6 @@ export interface AnalysisResult {
   text: string;
 }
 
-export interface CodexAccount { loggedIn: boolean; authType?: string; email?: string; pending: boolean; error?: string }
+export interface CodexAccount { loggedIn: boolean; authType?: string; email?: string; pending: boolean; error?: string; provider?: string; model?: string; source?: 'manual' | 'ccswitch' }
 export interface CodexLogin { type: 'chatgpt' | 'apiKey'; authUrl?: string }
+export interface CodexConnection { type: 'chatgpt' | 'apiKey'; apiKey?: string; baseUrl?: string; model?: string; source?: 'ccswitch'; configDir?: string }

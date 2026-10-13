@@ -1,6 +1,51 @@
 import { expect, test } from '@playwright/test';
 import { file } from './xlsx';
 
+test('自定义供应商提交地址和模型，密钥不留在页面或存储中', async ({ page }) => {
+  let loggedIn = false;
+  let submitted: unknown;
+  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn, pending: false, authType: 'apiKey', provider: loggedIn ? '测试供应商' : undefined, model: loggedIn ? 'chosen-model' : undefined, source: 'manual' } }));
+  await page.route('**/api/codex/login', route => {
+    submitted = route.request().postDataJSON(); loggedIn = true;
+    return route.fulfill({ json: { type: 'apiKey' } });
+  });
+  await page.goto('/');
+  await page.getByText('API Key / 自定义供应商', { exact: true }).click();
+  await page.getByLabel('API 地址').fill('https://gateway.example/v1');
+  await page.getByLabel('模型', { exact: false }).fill('chosen-model');
+  await page.getByLabel('API Key', { exact: true }).fill('custom-test-secret');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  expect(submitted).toEqual({ type: 'apiKey', apiKey: 'custom-test-secret', baseUrl: 'https://gateway.example/v1', model: 'chosen-model' });
+  await expect(page.locator('#account-status')).toContainText('测试供应商 · chosen-model');
+  await expect(page.locator('#api-key')).toHaveValue('');
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+  await expect(page.locator('body')).not.toContainText('custom-test-secret');
+});
+
+test('CC Switch 导入复用 API Key，失败后保留原状态并允许重试', async ({ page }) => {
+  let imported = false;
+  let attempts = 0;
+  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: true, pending: false, authType: imported ? 'apiKey' : 'chatgpt', provider: imported ? '本地路由' : undefined, model: imported ? 'imported-model' : undefined, source: imported ? 'ccswitch' : undefined } }));
+  await page.route('**/api/codex/login', route => {
+    expect(route.request().postDataJSON()).toEqual({ type: 'apiKey', source: 'ccswitch', configDir: 'C:/example/.codex' });
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 400, json: { error: { code: 'invalid_provider', message: '未找到可读取的 Codex 配置' } } });
+    imported = true;
+    return route.fulfill({ json: { type: 'apiKey' } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: '切换连接', exact: true }).click();
+  await page.getByText('API Key / 自定义供应商', { exact: true }).click();
+  await page.getByText('指定配置目录（可选）', { exact: true }).click();
+  await page.getByLabel('Codex 配置目录', { exact: true }).fill('C:/example/.codex');
+  await page.getByRole('button', { name: '从 CC Switch 导入并连接', exact: true }).click();
+  await expect(page.locator('#auth-error')).toContainText('未找到');
+  await expect(page.locator('#account-status')).toHaveText('已连接 · ChatGPT');
+  await page.getByRole('button', { name: '从 CC Switch 导入并连接', exact: true }).click();
+  await expect(page.locator('#account-status')).toHaveText('已连接 · API Key · 本地路由 · imported-model · 来自 CC Switch');
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
+});
+
 test('API Key 只提交到登录接口，输入和浏览器存储不保留密钥', async ({ page }) => {
   let loggedIn = false;
   let submitted: unknown;
@@ -11,12 +56,12 @@ test('API Key 只提交到登录接口，输入和浏览器存储不保留密钥
   });
   await page.route('**/api/codex/logout', route => { loggedIn = false; return route.fulfill({ json: { ok: true } }); });
   await page.goto('/');
-  await page.getByText('使用 API Key', { exact: true }).click();
-  await page.getByLabel('OpenAI API Key').fill('test-only-not-real');
+  await page.getByText('API Key / 自定义供应商', { exact: true }).click();
+  await page.getByLabel('API Key', { exact: true }).fill('test-only-not-real');
   await page.getByRole('button', { name: '连接', exact: true }).click();
   await expect(page.getByText('已连接 · API Key', { exact: true })).toBeVisible();
   expect(submitted).toEqual({ type: 'apiKey', apiKey: 'test-only-not-real' });
-  await expect(page.getByLabel('OpenAI API Key')).toHaveValue('');
+  await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await page.getByRole('button', { name: '退出登录 / 取消授权', exact: true }).click();
   await expect(page.locator('#account-status')).toHaveText('未登录');

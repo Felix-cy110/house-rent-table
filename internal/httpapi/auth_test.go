@@ -13,18 +13,57 @@ import (
 )
 
 type fakeAuth struct {
-	key  string
-	kind string
-	fail error
+	input analysis.LoginRequest
+	key   string
+	kind  string
+	fail  error
 }
 
 func (a *fakeAuth) Account(context.Context) (analysis.Account, error) {
 	return analysis.Account{LoggedIn: a.key != ""}, a.fail
 }
-func (a *fakeAuth) Login(_ context.Context, kind, key string) (analysis.Login, error) {
-	a.kind = kind
-	a.key = key
-	return analysis.Login{Type: kind}, a.fail
+func (a *fakeAuth) Login(_ context.Context, input analysis.LoginRequest) (analysis.Login, error) {
+	a.input = input
+	a.kind = input.Type
+	a.key = input.APIKey
+	return analysis.Login{Type: input.Type}, a.fail
+}
+
+func TestProviderRequestsAndValidation(t *testing.T) {
+	auth := &fakeAuth{}
+	handler := New(Options{Auth: auth})
+	for _, body := range []string{
+		`{"type":"apiKey","apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"chosen-model"}`,
+		`{"type":"apiKey","source":"ccswitch"}`,
+		`{"type":"apiKey","source":"ccswitch","configDir":"C:/Users/test/.codex"}`,
+	} {
+		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		var want analysis.LoginRequest
+		_ = json.Unmarshal([]byte(body), &want)
+		if w.Code != 200 || auth.input != want || strings.Contains(w.Body.String(), "test-only-secret") {
+			t.Fatal("provider request not forwarded safely")
+		}
+	}
+	for _, body := range []string{
+		`{"type":"apiKey","apiKey":"key","baseUrl":"file:///private","model":"m"}`,
+		`{"type":"apiKey","apiKey":"key","baseUrl":"https://user:password@example.com","model":"m"}`,
+		`{"type":"apiKey","apiKey":"key","baseUrl":"https://example.com?key=secret","model":"m"}`,
+		`{"type":"apiKey","apiKey":"key","baseUrl":"https://example.com"}`,
+		`{"type":"chatgpt","baseUrl":"https://example.com","model":"m"}`,
+		`{"type":"apiKey","source":"ccswitch","apiKey":"mixed-secret"}`,
+		`{"type":"apiKey","source":"unknown","apiKey":"key"}`,
+	} {
+		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 400 || strings.Contains(w.Body.String(), "mixed-secret") {
+			t.Fatal("invalid connection accepted or echoed")
+		}
+	}
 }
 func (a *fakeAuth) Logout(context.Context) error { a.key = ""; return a.fail }
 

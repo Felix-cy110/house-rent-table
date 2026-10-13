@@ -31,14 +31,15 @@ type message struct {
 }
 
 type client struct {
-	process childProcess
-	in      io.WriteCloser
-	done    chan struct{}
-	writeMu sync.Mutex
-	mu      sync.Mutex
-	pending map[string]chan message
-	next    atomic.Int64
-	notify  func(message)
+	provider *providerConfig
+	process  childProcess
+	in       io.WriteCloser
+	done     chan struct{}
+	writeMu  sync.Mutex
+	mu       sync.Mutex
+	pending  map[string]chan message
+	next     atomic.Int64
+	notify   func(message)
 }
 
 // Kill stops the managed process group on Windows, not just its root process.
@@ -77,7 +78,7 @@ func executable(configured string) (string, error) {
 	return "", analysis.ErrUnavailable
 }
 
-func start(binary, home, cwd string, notify func(message), request func(message) any) (*client, error) {
+func start(binary, home, cwd string, provider *providerConfig, notify func(message), request func(message) any) (*client, error) {
 	path, err := executable(binary)
 	if err != nil {
 		return nil, analysis.ErrUnavailable
@@ -87,17 +88,35 @@ func start(binary, home, cwd string, notify func(message), request func(message)
 		"-c", "features.shell_tool=false", "-c", "features.apply_patch_freeform=false",
 		"-c", "features.multi_agent=false", "-c", `web_search="live"`,
 		"-c", "apps._default.enabled=false", "-c", "project_doc_max_bytes=0")
+	if provider != nil {
+		// JSON strings are also TOML basic strings. Never interpolate unquoted input.
+		quote := func(s string) string { data, _ := json.Marshal(s); return string(data) }
+		cmd.Args = append(cmd.Args, "-c", `model_provider="rental_custom"`,
+			"-c", `model_providers.rental_custom.name="Rental API"`,
+			"-c", "model_providers.rental_custom.base_url="+quote(provider.BaseURL),
+			"-c", `model_providers.rental_custom.wire_api="responses"`,
+			"-c", "model_providers.rental_custom.env_key="+quote(providerKeyEnv),
+			"-c", "model_providers.rental_custom.requires_openai_auth=false")
+		if provider.Model != "" {
+			cmd.Args = append(cmd.Args, "-c", "model="+quote(provider.Model))
+		}
+	} else {
+		cmd.Args = append(cmd.Args, "-c", `model_provider="openai"`)
+	}
 	cmd.Dir = cwd
 	// Never inherit another Codex session's credentials or thread context.
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		key = strings.ToUpper(key)
-		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") {
+		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") || key == providerKeyEnv {
 			continue
 		}
 		cmd.Env = append(cmd.Env, entry)
 	}
 	cmd.Env = append(cmd.Env, "CODEX_HOME="+home)
+	if provider != nil {
+		cmd.Env = append(cmd.Env, providerKeyEnv+"="+provider.APIKey)
+	}
 	input, in, err := os.Pipe()
 	if err != nil {
 		return nil, analysis.ErrUnavailable
@@ -123,7 +142,7 @@ func start(binary, home, cwd string, notify func(message), request func(message)
 		out.Close()
 		return nil, analysis.ErrUnavailable
 	}
-	c := &client{process: process, in: in, done: make(chan struct{}), pending: make(map[string]chan message), notify: notify}
+	c := &client{provider: provider, process: process, in: in, done: make(chan struct{}), pending: make(map[string]chan message), notify: notify}
 	exited := make(chan struct{})
 	go func() {
 		defer close(exited)

@@ -69,7 +69,7 @@ func jobParent(dir string) error {
 	if err != nil {
 		return err
 	}
-	c, err := start(executable, dir, dir, func(message) {}, nil)
+	c, err := start(executable, dir, dir, nil, func(message) {}, nil)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func workerClient(t *testing.T, mode string) (*client, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := start(executable, dir, dir, func(message) {}, nil)
+	c, err := start(executable, dir, dir, nil, func(message) {}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

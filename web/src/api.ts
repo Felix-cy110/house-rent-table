@@ -1,4 +1,4 @@
-import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin } from './types';
+import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection } from './types';
 
 export class APIError extends Error {
   constructor(public code: string, message: string) {
@@ -39,9 +39,9 @@ export async function account(): Promise<CodexAccount> {
   return readResponse<CodexAccount>(await fetch('/api/codex/account'));
 }
 
-export async function login(type: 'chatgpt' | 'apiKey', apiKey?: string): Promise<CodexLogin> {
+export async function login(connection: CodexConnection): Promise<CodexLogin> {
   return readResponse<CodexLogin>(await fetch('/api/codex/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, apiKey }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(connection),
   }));
 }
 
