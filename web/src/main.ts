@@ -153,7 +153,14 @@ async function upload(file: File) {
 }
 
 function renderAnalysis(result: AnalysisResult) {
-  analysisContent.replaceChildren(renderReport(result.text));
+  const reportButton = textElement('button', '坑人', 'choose-file');
+  reportButton.type = 'button';
+  reportButton.addEventListener('click', () => {
+    window.alert('已经记录坑人中介');
+  });
+  const actions = textElement('div', '', 'analysis-action');
+  actions.append(reportButton);
+  analysisContent.replaceChildren(renderReport(result.text), actions);
 }
 
 fileInput.addEventListener('change', () => {
