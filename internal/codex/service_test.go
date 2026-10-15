@@ -89,13 +89,20 @@ func fakeServer() {
 		case "turn/start":
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "turn.json"), req.Params, 0600)
 			var params struct {
-				Input []struct {
+				OutputSchema json.RawMessage `json:"outputSchema"`
+				Input        []struct {
 					Text string `json:"text"`
 				} `json:"input"`
 			}
 			_ = json.Unmarshal(req.Params, &params)
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "payload.json"), []byte(params.Input[0].Text), 0600)
 			respond(map[string]any{"turn": map[string]string{"id": "turn-test"}})
+			if len(params.OutputSchema) > 0 {
+				output, _ := os.ReadFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "extraction-result.json"))
+				notify("item/completed", map[string]any{"threadId": "thread-test", "turnId": "turn-test", "item": map[string]string{"type": "agentMessage", "phase": "final_answer", "text": string(output)}})
+				notify("turn/completed", map[string]any{"threadId": "thread-test", "turn": map[string]string{"id": "turn-test", "status": "completed"}})
+				continue
+			}
 			if os.Getenv("RENT_CODEX_SCENARIO") == "wait" {
 				continue
 			}

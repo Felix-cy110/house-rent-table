@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -16,15 +17,19 @@ import (
 
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
 	"github.com/Felix-cy110/house-rent-table/internal/document"
+	"github.com/Felix-cy110/house-rent-table/internal/extraction"
 	"github.com/Felix-cy110/house-rent-table/internal/importer"
+	"github.com/Felix-cy110/house-rent-table/internal/persistence"
 )
 
 type Options struct {
-	Analyzer     analysis.Analyzer
-	Auth         analysis.Authenticator
-	LocalOnly    bool
-	WebDir       string
-	TemplatePath string
+	Analyzer        analysis.Analyzer
+	Auth            analysis.Authenticator
+	LocalOnly       bool
+	WebDir          string
+	TemplatePath    string
+	Persistence     *persistence.Worker
+	DefaultCurrency *string
 }
 
 func New(opts Options) http.Handler {
@@ -35,6 +40,32 @@ func New(opts Options) http.Handler {
 	registerAuth(mux, opts.Auth)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+	mux.HandleFunc("GET /api/persistence", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]bool{"enabled": opts.Persistence != nil})
+	})
+	mux.HandleFunc("GET /api/persistence/tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if opts.Persistence == nil {
+			writeError(w, 404, "persistence_disabled", "未启用后台保存")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		id := r.PathValue("id")
+		if len(id) != 36 {
+			writeError(w, 404, "task_not_found", "保存任务不存在")
+			return
+		}
+		status, err := opts.Persistence.GetSummary(ctx, id)
+		if errors.Is(err, persistence.ErrNotFound) {
+			writeError(w, 404, "task_not_found", "保存任务不存在")
+			return
+		}
+		if err != nil {
+			writeError(w, 503, "persistence_unavailable", "暂时无法查询保存状态")
+			return
+		}
+		writeJSON(w, 200, status)
 	})
 	mux.HandleFunc("POST /api/import", importExcel)
 	mux.HandleFunc("POST /api/analyze", func(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +99,18 @@ func New(opts Options) http.Handler {
 		if err := doc.Validate(); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid_document", err.Error())
 			return
+		}
+		// Only durable local admission is on the request path. AI and MySQL run
+		// independently; even a failed admission must not replace the main report.
+		if opts.Persistence != nil {
+			id, err := opts.Persistence.Queue.Enqueue(r.Context(), extraction.Input{Document: doc, Context: extraction.Context{DefaultCurrency: opts.DefaultCurrency}})
+			if err != nil {
+				w.Header().Set("X-Rental-Persistence", "failed")
+				log.Print("后台保存任务未创建：本地队列不可用或已满")
+			} else {
+				w.Header().Set("X-Rental-Persistence", "queued")
+				w.Header().Set("X-Rental-Task-Id", id)
+			}
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 		defer cancel()

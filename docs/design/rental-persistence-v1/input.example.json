@@ -1,0 +1,123 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "fileName": "虚构房源示例.xlsx",
+    "fields": [
+      {
+        "id": "field-1",
+        "label": "房租多少钱一个月",
+        "value": "2500元/月",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B2"
+      },
+      {
+        "id": "field-2",
+        "label": "押几付几",
+        "value": "押一付三",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B3"
+      },
+      {
+        "id": "field-3",
+        "label": "中介费多少",
+        "value": "月租的50%，入住时一次性支付",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B4"
+      },
+      {
+        "id": "field-4",
+        "label": "水费",
+        "value": "5元/吨",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B5"
+      },
+      {
+        "id": "field-5",
+        "label": "电费",
+        "value": "0.623元/度",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B6"
+      },
+      {
+        "id": "field-6",
+        "label": "保洁费",
+        "value": "免费",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B7"
+      },
+      {
+        "id": "field-7",
+        "label": "物业费多少",
+        "value": "已包含在房租中",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B8"
+      },
+      {
+        "id": "field-8",
+        "label": "燃气费",
+        "value": "待确认",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B9"
+      },
+      {
+        "id": "field-9",
+        "label": "首月总共要付多少",
+        "value": "中介报价11250元",
+        "bold": true,
+        "sheet": "Sheet1",
+        "cell": "B10"
+      },
+      {
+        "id": "field-10",
+        "label": "以后每个月要付多少钱",
+        "value": "固定2500元，水电燃气另算",
+        "bold": true,
+        "sheet": "Sheet1",
+        "cell": "B11"
+      },
+      {
+        "id": "field-11",
+        "label": "小区地点",
+        "value": "示例市示例区示例小区（虚构）",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B12"
+      },
+      {
+        "id": "field-12",
+        "label": "房间大小/平方",
+        "value": "单间25—30平方米",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B13"
+      },
+      {
+        "id": "field-13",
+        "label": "朝向",
+        "value": "朝南",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B14"
+      },
+      {
+        "id": "field-14",
+        "label": "中介姓名",
+        "value": "示例中介（虚构）",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B15"
+      }
+    ]
+  },
+  "extraction_context": {
+    "default_currency": "CNY"
+  }
+}

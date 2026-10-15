@@ -1,4 +1,4 @@
-import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection } from './types';
+import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection, PersistenceReceipt, PersistenceStatus } from './types';
 
 export class APIError extends Error {
   constructor(public code: string, message: string) {
@@ -26,13 +26,20 @@ export async function importExcel(file: File, signal: AbortSignal): Promise<Impo
   return readResponse<ImportResult>(await fetch('/api/import', { method: 'POST', body, signal }));
 }
 
-export async function analyze(payload: string, signal: AbortSignal): Promise<AnalysisResult> {
-  return readResponse<AnalysisResult>(await fetch('/api/analyze', {
+export async function analyze(payload: string, signal: AbortSignal, onPersistence?: (receipt: PersistenceReceipt) => void): Promise<AnalysisResult> {
+  const response = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: payload,
     signal,
-  }));
+  });
+  const status = response.headers.get('X-Rental-Persistence');
+  if (status === 'queued' || status === 'failed') onPersistence?.({ status, taskId: response.headers.get('X-Rental-Task-Id') });
+  return readResponse<AnalysisResult>(response);
+}
+
+export async function persistenceStatus(id: string): Promise<PersistenceStatus> {
+  return readResponse<PersistenceStatus>(await fetch(`/api/persistence/tasks/${encodeURIComponent(id)}`));
 }
 
 export async function account(): Promise<CodexAccount> {

@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "rental": {
+    "community_location": "示例市示例区示例小区（虚构）",
+    "area_sqm": null,
+    "area_min_sqm": "25.00",
+    "area_max_sqm": "30.00",
+    "area_qualifier": "RANGE",
+    "area_scope": "ROOM",
+    "orientation": "S",
+    "broker_name": "示例中介（虚构）",
+    "currency": "CNY",
+    "monthly_rent": "2500.00",
+    "deposit_months": "1.00",
+    "prepay_months": "3.00",
+    "deposit_amount": null,
+    "quoted_first_month_total": "11250.00",
+    "quoted_monthly_total": "2500.00"
+  },
+  "charges": [
+    {
+      "charge_type": "AGENCY",
+      "charge_name": "中介费",
+      "direction": "CHARGE",
+      "pricing_mode": "RENT_RATIO",
+      "currency": "CNY",
+      "amount": null,
+      "unit_price": null,
+      "unit": null,
+      "ratio": "0.500000",
+      "ratio_base": "MONTHLY_RENT",
+      "billing_period": "ONCE",
+      "payment_timing": "MOVE_IN",
+      "source_field_ids": [
+        "field-3"
+      ],
+      "notes": null
+    },
+    {
+      "charge_type": "WATER",
+      "charge_name": "水费",
+      "direction": "CHARGE",
+      "pricing_mode": "UNIT_PRICE",
+      "currency": "CNY",
+      "amount": null,
+      "unit_price": "5.000000",
+      "unit": "TON",
+      "ratio": null,
+      "ratio_base": null,
+      "billing_period": null,
+      "payment_timing": null,
+      "source_field_ids": [
+        "field-4"
+      ],
+      "notes": null
+    },
+    {
+      "charge_type": "ELECTRICITY",
+      "charge_name": "电费",
+      "direction": "CHARGE",
+      "pricing_mode": "UNIT_PRICE",
+      "currency": "CNY",
+      "amount": null,
+      "unit_price": "0.623000",
+      "unit": "KWH",
+      "ratio": null,
+      "ratio_base": null,
+      "billing_period": null,
+      "payment_timing": null,
+      "source_field_ids": [
+        "field-5"
+      ],
+      "notes": null
+    },
+    {
+      "charge_type": "CLEANING",
+      "charge_name": "保洁费",
+      "direction": "CHARGE",
+      "pricing_mode": "FREE",
+      "currency": "CNY",
+      "amount": "0.00",
+      "unit_price": null,
+      "unit": null,
+      "ratio": null,
+      "ratio_base": null,
+      "billing_period": null,
+      "payment_timing": null,
+      "source_field_ids": [
+        "field-6"
+      ],
+      "notes": null
+    },
+    {
+      "charge_type": "PROPERTY",
+      "charge_name": "物业费",
+      "direction": "CHARGE",
+      "pricing_mode": "INCLUDED",
+      "currency": "CNY",
+      "amount": null,
+      "unit_price": null,
+      "unit": null,
+      "ratio": null,
+      "ratio_base": null,
+      "billing_period": null,
+      "payment_timing": null,
+      "source_field_ids": [
+        "field-7"
+      ],
+      "notes": "包含在房租中；并非明确报价为零。"
+    },
+    {
+      "charge_type": "GAS",
+      "charge_name": "燃气费",
+      "direction": "CHARGE",
+      "pricing_mode": "UNKNOWN",
+      "currency": "CNY",
+      "amount": null,
+      "unit_price": null,
+      "unit": null,
+      "ratio": null,
+      "ratio_base": null,
+      "billing_period": null,
+      "payment_timing": null,
+      "source_field_ids": [
+        "field-8"
+      ],
+      "notes": "待确认"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "/rental/community_location",
+      "source_field_ids": [
+        "field-11"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/area_min_sqm",
+      "source_field_ids": [
+        "field-12"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/area_max_sqm",
+      "source_field_ids": [
+        "field-12"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/area_qualifier",
+      "source_field_ids": [
+        "field-12"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/area_scope",
+      "source_field_ids": [
+        "field-12"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/orientation",
+      "source_field_ids": [
+        "field-13"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/broker_name",
+      "source_field_ids": [
+        "field-14"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/currency",
+      "source_field_ids": [
+        "field-1"
+      ],
+      "note": "原文使用元；按固定 extraction_context.default_currency=CNY 解释。"
+    },
+    {
+      "path": "/rental/monthly_rent",
+      "source_field_ids": [
+        "field-1"
+      ],
+      "note": null
+    },
+    {
+      "path": "/rental/deposit_months",
+      "source_field_ids": [
+        "field-2"
+      ],
+      "note": "押一对应1个月月租。"
+    },
+    {
+      "path": "/rental/prepay_months",
+      "source_field_ids": [
+        "field-2"
+      ],
+      "note": "付三对应每次预付3个月。"
+    },
+    {
+      "path": "/rental/quoted_first_month_total",
+      "source_field_ids": [
+        "field-9"
+      ],
+      "note": "仅保存填写报价；不认为它已经过核算。"
+    },
+    {
+      "path": "/rental/quoted_monthly_total",
+      "source_field_ids": [
+        "field-10"
+      ],
+      "note": "原文仅含固定费用，水电燃气另算；不能理解为全包费用。"
+    }
+  ],
+  "issues": [
+    {
+      "path": "/charges/5",
+      "source_field_ids": [
+        "field-8"
+      ],
+      "code": "AMBIGUOUS",
+      "message": "原文为待确认，不能补出燃气单价或把未知费用当零。"
+    }
+  ],
+  "unmapped_field_ids": []
+}

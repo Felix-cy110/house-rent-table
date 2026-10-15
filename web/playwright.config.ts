@@ -15,6 +15,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
+    env: { RENT_MYSQL_DSN: '' },
     command: 'go run ./cmd/server -addr 127.0.0.1:18080 -codex-bin __missing_codex_for_browser_tests__ -codex-home .work/codex-browser-tests',
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     url: 'http://127.0.0.1:18080/api/health',
