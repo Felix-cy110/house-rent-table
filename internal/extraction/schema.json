@@ -1,0 +1,473 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "租房业务提取结果 V1",
+  "description": "独立于输入 Document 的业务输出契约；不包含后端生成的任务 ID、状态和时间。金额为定长小数位十进制字符串。跨字段语义和原文证据必须另由后端验证。",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "rental": {
+      "$ref": "#/$defs/rental"
+    },
+    "charges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/charge"
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      },
+      "minItems": 0,
+      "maxItems": 2000
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      },
+      "minItems": 0,
+      "maxItems": 2000
+    },
+    "unmapped_field_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/field_id"
+      },
+      "minItems": 0,
+      "maxItems": 500
+    }
+  },
+  "required": [
+    "schema_version",
+    "rental",
+    "charges",
+    "evidence",
+    "issues",
+    "unmapped_field_ids"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "money": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(0|[1-9][0-9]{0,11})\\.[0-9]{2}$"
+    },
+    "area": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(0|[1-9][0-9]{0,7})\\.[0-9]{2}$"
+    },
+    "months": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(0|[1-9][0-9]{0,3})\\.[0-9]{2}$"
+    },
+    "unit_price": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(0|[1-9][0-9]{0,11})\\.[0-9]{6}$"
+    },
+    "ratio": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(0|[1-9][0-9]{0,3})\\.[0-9]{6}$"
+    },
+    "currency": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Z]{3}$"
+    },
+    "field_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "field_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/field_id"
+      },
+      "minItems": 1,
+      "maxItems": 500
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^/"
+    },
+    "area_qualifier": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "EXACT",
+        "APPROXIMATE",
+        "RANGE",
+        null
+      ]
+    },
+    "area_scope": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ROOM",
+        "UNIT",
+        "GROSS",
+        "USABLE",
+        "OTHER",
+        null
+      ]
+    },
+    "orientation": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "N",
+        "NE",
+        "E",
+        "SE",
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "NS",
+        "EW",
+        "OTHER",
+        null
+      ]
+    },
+    "charge_type": {
+      "type": "string",
+      "enum": [
+        "AGENCY",
+        "WATER",
+        "ELECTRICITY",
+        "CLEANING",
+        "PROPERTY",
+        "GAS",
+        "OTHER"
+      ]
+    },
+    "direction": {
+      "type": "string",
+      "enum": [
+        "CHARGE",
+        "CREDIT",
+        "UNKNOWN"
+      ]
+    },
+    "pricing_mode": {
+      "type": "string",
+      "enum": [
+        "FIXED",
+        "UNIT_PRICE",
+        "RENT_RATIO",
+        "INCLUDED",
+        "FREE",
+        "UNKNOWN"
+      ]
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "TON",
+        "M3",
+        "KWH",
+        "SQM",
+        "PERSON",
+        "HOUSEHOLD",
+        "OTHER",
+        null
+      ]
+    },
+    "ratio_base": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "MONTHLY_RENT",
+        "ANNUAL_RENT",
+        "OTHER",
+        null
+      ]
+    },
+    "billing_period": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "ONCE",
+        "DAY",
+        "WEEK",
+        "MONTH",
+        "QUARTER",
+        "YEAR",
+        "OTHER",
+        null
+      ]
+    },
+    "payment_timing": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "MOVE_IN",
+        "RECURRING",
+        "MOVE_OUT",
+        "OTHER",
+        null
+      ]
+    },
+    "issue_code": {
+      "type": "string",
+      "enum": [
+        "AMBIGUOUS",
+        "CONFLICT",
+        "UNSUPPORTED_UNIT",
+        "UNSUPPORTED_PERIOD",
+        "UNSUPPORTED_RULE",
+        "APPROXIMATE_VALUE",
+        "RANGE_VALUE",
+        "CURRENCY_UNKNOWN",
+        "CURRENCY_CONFLICT",
+        "INVALID_VALUE",
+        "PRECISION_LOSS"
+      ]
+    },
+    "rental": {
+      "type": "object",
+      "properties": {
+        "community_location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 10000
+        },
+        "area_sqm": {
+          "$ref": "#/$defs/area"
+        },
+        "area_min_sqm": {
+          "$ref": "#/$defs/area"
+        },
+        "area_max_sqm": {
+          "$ref": "#/$defs/area"
+        },
+        "area_qualifier": {
+          "$ref": "#/$defs/area_qualifier"
+        },
+        "area_scope": {
+          "$ref": "#/$defs/area_scope"
+        },
+        "orientation": {
+          "$ref": "#/$defs/orientation"
+        },
+        "broker_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "monthly_rent": {
+          "$ref": "#/$defs/money"
+        },
+        "deposit_months": {
+          "$ref": "#/$defs/months"
+        },
+        "prepay_months": {
+          "$ref": "#/$defs/months"
+        },
+        "deposit_amount": {
+          "$ref": "#/$defs/money"
+        },
+        "quoted_first_month_total": {
+          "$ref": "#/$defs/money"
+        },
+        "quoted_monthly_total": {
+          "$ref": "#/$defs/money"
+        }
+      },
+      "required": [
+        "community_location",
+        "area_sqm",
+        "area_min_sqm",
+        "area_max_sqm",
+        "area_qualifier",
+        "area_scope",
+        "orientation",
+        "broker_name",
+        "currency",
+        "monthly_rent",
+        "deposit_months",
+        "prepay_months",
+        "deposit_amount",
+        "quoted_first_month_total",
+        "quoted_monthly_total"
+      ],
+      "additionalProperties": false,
+      "description": "模板的房源和付款条件；可空值必须显式输出 null。金额保存明确报价，不用模型核算结果补填。"
+    },
+    "charge": {
+      "type": "object",
+      "properties": {
+        "charge_type": {
+          "$ref": "#/$defs/charge_type"
+        },
+        "charge_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "direction": {
+          "$ref": "#/$defs/direction"
+        },
+        "pricing_mode": {
+          "$ref": "#/$defs/pricing_mode"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "amount": {
+          "$ref": "#/$defs/money"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/unit_price"
+        },
+        "unit": {
+          "$ref": "#/$defs/unit"
+        },
+        "ratio": {
+          "$ref": "#/$defs/ratio"
+        },
+        "ratio_base": {
+          "$ref": "#/$defs/ratio_base"
+        },
+        "billing_period": {
+          "$ref": "#/$defs/billing_period"
+        },
+        "payment_timing": {
+          "$ref": "#/$defs/payment_timing"
+        },
+        "source_field_ids": {
+          "$ref": "#/$defs/field_ids"
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 10000
+        }
+      },
+      "required": [
+        "charge_type",
+        "charge_name",
+        "direction",
+        "pricing_mode",
+        "currency",
+        "amount",
+        "unit_price",
+        "unit",
+        "ratio",
+        "ratio_base",
+        "billing_period",
+        "payment_timing",
+        "source_field_ids",
+        "notes"
+      ],
+      "additionalProperties": false,
+      "description": "一项收费的计价形式；字段组合还须通过 README 规定的业务验证。"
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "source_field_ids": {
+          "$ref": "#/$defs/field_ids"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "path",
+        "source_field_ids",
+        "note"
+      ],
+      "additionalProperties": false
+    },
+    "issue": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "source_field_ids": {
+          "$ref": "#/$defs/field_ids"
+        },
+        "code": {
+          "$ref": "#/$defs/issue_code"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "path",
+        "source_field_ids",
+        "code",
+        "message"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

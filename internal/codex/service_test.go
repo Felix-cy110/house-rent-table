@@ -30,6 +30,10 @@ func fakeServer() {
 	customProvider := strings.Contains(strings.Join(os.Args, " "), "model_providers.rental_custom.requires_openai_auth=false")
 	args, _ := json.Marshal(os.Args[1:])
 	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "args.json"), args, 0600)
+	_, databaseEnv := os.LookupEnv("RENT_MYSQL_DSN")
+	_, testDatabaseEnv := os.LookupEnv("RENT_TEST_MYSQL_DSN")
+	presence, _ := json.Marshal(map[string]bool{"database": databaseEnv, "testDatabase": testDatabaseEnv})
+	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "database-env.json"), presence, 0600)
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	loggedIn := false
@@ -89,13 +93,20 @@ func fakeServer() {
 		case "turn/start":
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "turn.json"), req.Params, 0600)
 			var params struct {
-				Input []struct {
+				OutputSchema json.RawMessage `json:"outputSchema"`
+				Input        []struct {
 					Text string `json:"text"`
 				} `json:"input"`
 			}
 			_ = json.Unmarshal(req.Params, &params)
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "payload.json"), []byte(params.Input[0].Text), 0600)
 			respond(map[string]any{"turn": map[string]string{"id": "turn-test"}})
+			if len(params.OutputSchema) > 0 {
+				output, _ := os.ReadFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "extraction-result.json"))
+				notify("item/completed", map[string]any{"threadId": "thread-test", "turnId": "turn-test", "item": map[string]string{"type": "agentMessage", "phase": "final_answer", "text": string(output)}})
+				notify("turn/completed", map[string]any{"threadId": "thread-test", "turn": map[string]string{"id": "turn-test", "status": "completed"}})
+				continue
+			}
 			if os.Getenv("RENT_CODEX_SCENARIO") == "wait" {
 				continue
 			}
@@ -144,6 +155,8 @@ func testService(t *testing.T) (*Service, string) {
 }
 
 func TestProtocolLoginForwardAndLogout(t *testing.T) {
+	t.Setenv("RENT_MYSQL_DSN", "fixture-database-credential")
+	t.Setenv("RENT_TEST_MYSQL_DSN", "fixture-test-database-credential")
 	s, capture := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -169,6 +182,14 @@ func TestProtocolLoginForwardAndLogout(t *testing.T) {
 	}
 	if result.Text != "原始回复\n  保留空格 <script>" {
 		t.Fatalf("output was rewritten: %q", result.Text)
+	}
+	envPresence, err := os.ReadFile(filepath.Join(capture, "database-env.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databaseEnv map[string]bool
+	if json.Unmarshal(envPresence, &databaseEnv) != nil || len(databaseEnv) != 2 || databaseEnv["database"] || databaseEnv["testDatabase"] {
+		t.Fatal("database credentials inherited by Codex child process")
 	}
 	thread, _ := os.ReadFile(filepath.Join(capture, "thread.json"))
 	var params map[string]any

@@ -1,5 +1,5 @@
 import './style.css';
-import { analyze, APIError, importExcel } from './api';
+import { analyze, APIError, importExcel, persistenceStatus } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
@@ -38,15 +38,20 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div class="table-wrap"><table><caption class="sr-only">Excel 识别内容</caption><thead><tr><th scope="col">项目</th><th scope="col">填写内容</th></tr></thead><tbody id="field-list"></tbody></table></div>
     <details class="payload-preview"><summary>查看将发送的完整内容</summary><pre id="payload-content"></pre></details>
     <div class="analysis-action"><p>完整内容与加粗标记将发送给 Codex，联网核价并核算加粗项目。</p><div class="analysis-buttons"><button id="cancel-analysis" class="text-button" type="button" hidden>取消分析</button><button id="analyze-button" class="primary-button" type="button">发送并分析 <span aria-hidden="true">→</span></button></div></div>
+    <p id="persistence-notice" class="format-hint" hidden>已启用历史保存：发送分析时会另行调用 AI 提取业务数据。取消报告、清空或刷新页面不撤销已提交的保存任务。</p>
+    <p id="persistence-status" class="message" role="status" hidden></p>
   </section>
   <section id="analysis-panel" class="analysis-panel" aria-labelledby="analysis-title" aria-live="polite" hidden>
     <h2 id="analysis-title"><span class="step">03</span> 检查结果</h2>
     <div id="analysis-content"></div>
   </section>
-  <footer>只核查表内项目。价格对照附来源，无法核实的内容会单独说明。<br /><span class="session-note">刷新页面后清空表格与回复。登录凭据由本机 Codex 单独管理。</span></footer>
+  <footer>只核查表内项目。价格对照附来源，无法核实的内容会单独说明。<br /><span class="session-note">清空或刷新只移除页面中的表格与回复；已启用的后台历史保存不受影响。登录凭据由本机 Codex 单独管理。</span></footer>
 `;
 
 setupAuth(document.getElementById('codex-account')!);
+void fetch('/api/persistence').then(response => response.json()).then((config: { enabled?: boolean }) => {
+  if (config.enabled) document.getElementById('persistence-notice')!.hidden = false;
+}).catch(() => { /* Saving receipts still report admission even if configuration lookup fails. */ });
 
 function element<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
@@ -69,6 +74,20 @@ const analysisContent = element<HTMLDivElement>('analysis-content');
 let currentDocument: RentalDocument | null = null;
 let activeRequest: AbortController | null = null;
 let generation = 0;
+let persistenceGeneration = 0;
+
+async function trackPersistence(id: string, version: number) {
+  for (let attempt = 0; attempt < 300 && version === persistenceGeneration; attempt++) {
+    try {
+      const status = await persistenceStatus(id);
+      if (version !== persistenceGeneration) return;
+      if (status.status === 'SUCCEEDED') { showMessage('persistence-status', '本次业务数据已保存。'); return; }
+      if (status.status === 'FAILED') { showMessage('persistence-status', status.message ?? '后台提取失败，未生成业务记录。'); return; }
+      showMessage('persistence-status', status.message ?? (status.stage === 'EXTRACT' ? '后台正在提取业务数据…' : '后台正在保存业务数据…'));
+    } catch { if (version === persistenceGeneration) showMessage('persistence-status', '暂时无法查询后台保存状态，任务不会因关闭页面而取消。'); }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
 
 function showMessage(id: string, message: string) {
   const node = element(id);
@@ -77,6 +96,8 @@ function showMessage(id: string, message: string) {
 }
 
 function clearDocument() {
+  persistenceGeneration++;
+  showMessage('persistence-status', '');
   generation++;
   activeRequest?.abort();
   activeRequest = null;
@@ -191,6 +212,8 @@ analyzeButton.addEventListener('click', async () => {
   if (!currentDocument) return;
   const payload = JSON.stringify(currentDocument, null, 2);
   const requestGeneration = generation;
+  const saveGeneration = ++persistenceGeneration;
+  showMessage('persistence-status', '');
   activeRequest?.abort();
   activeRequest = new AbortController();
   analyzeButton.disabled = true;
@@ -199,7 +222,11 @@ analyzeButton.addEventListener('click', async () => {
   analysisPanel.hidden = false;
   analysisContent.replaceChildren(textElement('p', '正在联网核对报价并检查标记项目，通常需要几分钟。可随时取消。', 'quiet'));
   try {
-    const result = await analyze(payload, activeRequest.signal);
+    const result = await analyze(payload, activeRequest.signal, receipt => {
+      if (saveGeneration !== persistenceGeneration) return;
+      if (receipt.status === 'failed') showMessage('persistence-status', '本次后台保存任务未创建，分析报告仍可正常生成。');
+      else if (receipt.taskId) void trackPersistence(receipt.taskId, saveGeneration);
+    });
     if (requestGeneration === generation) renderAnalysis(result);
   } catch (error) {
     if (requestGeneration !== generation) return;

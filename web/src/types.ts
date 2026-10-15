@@ -22,6 +22,9 @@ export interface AnalysisResult {
   text: string;
 }
 
+export interface PersistenceReceipt { status: 'queued' | 'failed'; taskId: string | null }
+export interface PersistenceStatus { taskId: string; stage: 'EXTRACT' | 'PERSIST'; status: 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'SUCCEEDED' | 'FAILED'; message?: string }
+
 export interface CodexAccount { loggedIn: boolean; authType?: string; email?: string; pending: boolean; error?: string; provider?: string; model?: string; source?: 'manual' | 'ccswitch' }
 export interface CodexLogin { type: 'chatgpt' | 'apiKey'; authUrl?: string }
 export interface CodexConnection { type: 'chatgpt' | 'apiKey'; apiKey?: string; baseUrl?: string; model?: string; source?: 'ccswitch'; configDir?: string }

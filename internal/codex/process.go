@@ -78,7 +78,7 @@ func executable(configured string) (string, error) {
 	return "", analysis.ErrUnavailable
 }
 
-func start(binary, home, cwd string, provider *providerConfig, notify func(message), request func(message) any) (*client, error) {
+func start(binary, home, cwd string, provider *providerConfig, notify func(message), request func(message) any, extractionOnly ...bool) (*client, error) {
 	path, err := executable(binary)
 	if err != nil {
 		return nil, analysis.ErrUnavailable
@@ -88,6 +88,9 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 		"-c", "features.shell_tool=false", "-c", "features.apply_patch_freeform=false",
 		"-c", "features.multi_agent=false", "-c", `web_search="live"`,
 		"-c", "apps._default.enabled=false", "-c", "project_doc_max_bytes=0")
+	if len(extractionOnly) > 0 && extractionOnly[0] {
+		cmd.Args = append(cmd.Args, "-c", `web_search="disabled"`)
+	}
 	if provider != nil {
 		// JSON strings are also TOML basic strings. Never interpolate unquoted input.
 		quote := func(s string) string { data, _ := json.Marshal(s); return string(data) }
@@ -108,7 +111,7 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		key = strings.ToUpper(key)
-		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") || key == providerKeyEnv {
+		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") || key == providerKeyEnv || key == "RENT_MYSQL_DSN" || key == "RENT_TEST_MYSQL_DSN" {
 			continue
 		}
 		cmd.Env = append(cmd.Env, entry)

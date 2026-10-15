@@ -22,19 +22,20 @@ type Options struct {
 }
 
 type Service struct {
-	opts         Options
-	startMu      sync.Mutex
-	client       *client
-	gate         chan struct{}
-	mu           sync.Mutex
-	loginID      string
-	loginError   string
-	loginResults map[string]bool
-	threadID     string
-	events       chan message
-	workDir      string
-	skillPath    string
-	runContext   context.Context
+	opts           Options
+	startMu        sync.Mutex
+	client         *client
+	gate           chan struct{}
+	mu             sync.Mutex
+	loginID        string
+	loginError     string
+	loginResults   map[string]bool
+	threadID       string
+	events         chan message
+	workDir        string
+	skillPath      string
+	runContext     context.Context
+	extractionOnly bool
 }
 
 func New(opts Options) *Service {
@@ -69,7 +70,7 @@ func (s *Service) connection(ctx context.Context) (*client, error) {
 
 // Caller holds startMu. Configurations are snapshots; Account calls cannot see
 // a half-switched client or a partly written provider file.
-func (s *Service) prepareHome() (string, error) {
+func (s *Service) authHome() (string, error) {
 	if s.opts.Home == "" {
 		root, err := os.UserConfigDir()
 		if err != nil {
@@ -80,6 +81,14 @@ func (s *Service) prepareHome() (string, error) {
 	home, err := filepath.Abs(s.opts.Home)
 	if err != nil {
 		return "", analysis.ErrUnavailable
+	}
+	return home, nil
+}
+
+func (s *Service) prepareHome() (string, error) {
+	home, err := s.authHome()
+	if err != nil {
+		return "", err
 	}
 	if s.workDir == "" {
 		s.workDir = filepath.Join(home, "workspace")
@@ -95,7 +104,11 @@ func (s *Service) prepareHome() (string, error) {
 }
 
 func (s *Service) openClient(ctx context.Context, home string, provider *providerConfig) (*client, error) {
-	c, err := start(s.opts.Binary, home, s.workDir, provider, s.notification, s.toolRequest)
+	var toolHandler func(message) any
+	if !s.extractionOnly {
+		toolHandler = s.toolRequest
+	}
+	c, err := start(s.opts.Binary, home, s.workDir, provider, s.notification, toolHandler, s.extractionOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -390,6 +403,10 @@ func (s *Service) threadParams() map[string]any {
 }
 
 func (s *Service) Analyze(ctx context.Context, payload json.RawMessage) (analysis.Result, error) {
+	return s.analyze(ctx, payload, nil, "")
+}
+
+func (s *Service) analyze(ctx context.Context, payload json.RawMessage, schema json.RawMessage, guidance string) (analysis.Result, error) {
 	if !s.acquire() {
 		return analysis.Result{}, analysis.ErrBusy
 	}
@@ -406,10 +423,15 @@ func (s *Service) Analyze(ctx context.Context, payload json.RawMessage) (analysi
 		return analysis.Result{}, analysis.ErrLoginRequired
 	}
 	params := s.threadParams()
+	if schema != nil {
+		params["developerInstructions"] = guidance
+		delete(params, "dynamicTools")
+	}
 	if c.provider != nil && c.provider.Model != "" {
 		params["model"] = c.provider.Model
 	}
 	var thread struct {
+		Model  string `json:"model"`
 		Thread struct {
 			ID string `json:"id"`
 		} `json:"thread"`
@@ -419,6 +441,9 @@ func (s *Service) Analyze(ctx context.Context, payload json.RawMessage) (analysi
 	}
 	if thread.Thread.ID == "" {
 		return analysis.Result{}, analysis.ErrFailed
+	}
+	if schema != nil && thread.Model != "" {
+		s.opts.Model = thread.Model
 	}
 	events := make(chan message, 64)
 	s.mu.Lock()
@@ -441,10 +466,15 @@ func (s *Service) Analyze(ctx context.Context, payload json.RawMessage) (analysi
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
-	err = c.call(ctx, "turn/start", map[string]any{"threadId": thread.Thread.ID, "input": []any{
+	turnParams := map[string]any{"threadId": thread.Thread.ID, "input": []any{
 		map[string]any{"type": "text", "text": string(payload), "text_elements": []any{}},
 		map[string]any{"type": "skill", "name": skills.Name, "path": s.skillPath},
-	}}, &started)
+	}}
+	if schema != nil {
+		turnParams["input"] = []any{map[string]any{"type": "text", "text": string(payload), "text_elements": []any{}}}
+		turnParams["outputSchema"] = schema
+	}
+	err = c.call(ctx, "turn/start", turnParams, &started)
 	if err != nil {
 		if canceled(err) {
 			c.close()
