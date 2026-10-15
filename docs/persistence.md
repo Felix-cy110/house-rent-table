@@ -12,16 +12,18 @@
 CREATE DATABASE house_rent CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 ```
 
-PowerShell 配置示例（替换账号与密码）：
+在仓库根目录复制示例并编辑本机配置，将 `.env` 中的账号与密码替换为实际值：
 
 ```powershell
-$env:RENT_MYSQL_DSN = 'rental_app:替换为密码@tcp(127.0.0.1:3306)/house_rent'
-$env:RENT_DEFAULT_CURRENCY = 'CNY'
+Copy-Item .env.example .env
+# 编辑 .env 后执行：
 go run ./cmd/migrate
 go run ./cmd/server
 ```
 
-应用直接读取环境变量，不自动加载 `.env`。`.env.example` 仅供参考。不要把真实连接串写进代码或 Git。未设置 `RENT_MYSQL_DSN` 时关闭后台保存，原有功能可独立使用。
+服务和迁移命令在读取配置前自动加载当前工作目录的 `.env`。文件不存在时继续使用系统环境变量；环境变量优先于 `.env`，包括显式设置的空字符串。`.env` 和 `.env.*` 已被 Git 忽略，仅提交不含真实密码的 `.env.example`。请在仓库根目录运行命令，或在服务启动目录放置 `.env`。未配置或显式清空 `RENT_MYSQL_DSN` 时关闭后台保存，原有功能可独立使用。
+
+连接串可使用单引号包裹，原样保留密码里的 `$`、`#` 等字符；支持 Windows UTF-8 BOM。配置解析失败时只输出通用错误，不输出配置原文。数据库连接串不传给 Codex 子进程，也不会进入前端构建变量。
 
 `RENT_DEFAULT_CURRENCY` 默认 CNY，仅作为未明确币种时的后端固定上下文；设置为空则不提供默认币种。每个任务保留创建时的上下文，重试不受之后环境变量变化影响。未给出单位/周期时不会自动补 MONTH，也不会自动把房间面积当物业计费面积。
 
@@ -86,4 +88,8 @@ go test ./internal/codex -run TestInstalledCodexExtractionSchema -count=1
 
 本轮已通过全部 Go 测试、go vet、前端构建、21 项 Playwright 测试和模板检查。隔离 MySQL 9.1 测试通过迁移重放、并发幂等、事务回滚、长元数据和精确小数验证；真实 Codex CLI 对接本地模拟 Responses 服务的测试也已通过。
 
-CI 配置包含 MySQL 8.4 集成测试和 Go race 检查，尚未运行远端 CI；本机 CGO 关闭且未安装可用 C 编译器，未执行 race 检查。自定义供应商是否真正遵守结构化输出，仍需在对应提供方环境验证；服务端始终执行独立校验，不依赖供应商声明。本轮未调用真实模型供应商，也未配置正式数据库。
+持久化实现的远端 CI 已通过 MySQL 8.4 集成测试和 Go race 检查；本机 CGO 关闭且未安装可用 C 编译器，未在本机执行 race 检查。
+
+补充 `.env` 加载后，全量 Go 测试、go vet、前端构建和 3 项持久化页面测试通过；新增用例覆盖环境变量优先、空值覆盖、Windows BOM、带特殊字符的单引号值、解析错误脱敏，以及数据库凭据不传给 Codex 子进程。本机通过 `.env` 验证连接并完成了项目库的 V1 迁移。
+
+自定义供应商是否真正遵守结构化输出，仍需在对应提供方环境验证；服务端始终执行独立校验，不依赖供应商声明。本轮未调用真实模型供应商。

@@ -4,6 +4,8 @@ Go + TypeScript 的最小 Web 应用：上传填写好的 Excel，核对解析�
 
 通过官方 Codex App Server 提供 ChatGPT OAuth / API Key 登录。每次分析显式加载仓库内的 [租房费用审查 skill](skills/rental-review/SKILL.md)，联网对比表内租金及收费，并根据 Excel 项目名的加粗标记选择核算目标，显示计算明细、差额和来源链接。可选启用独立的 AI 业务提取链路，将结构化房源和费用记录存入 MySQL，详见 [后台持久化配置](docs/persistence.md)。
 
+MySQL 凭据填写在本机 `.env` 中：复制 `.env.example` 后修改连接串，服务和迁移命令会自动加载。系统环境变量优先；`.env` 已被 Git 忽略，示例文件只保留占位值。
+
 ## 启动应用
 
 需要 Go 1.25+、Node.js 22.12+ 和 Codex CLI。本轮真实协议检查使用 `codex-cli 0.153.4`；App Server 协议会随 CLI 版本变化，其他版本需验证兼容性。在仓库根目录执行：

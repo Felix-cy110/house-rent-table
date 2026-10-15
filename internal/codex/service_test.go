@@ -30,6 +30,10 @@ func fakeServer() {
 	customProvider := strings.Contains(strings.Join(os.Args, " "), "model_providers.rental_custom.requires_openai_auth=false")
 	args, _ := json.Marshal(os.Args[1:])
 	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "args.json"), args, 0600)
+	_, databaseEnv := os.LookupEnv("RENT_MYSQL_DSN")
+	_, testDatabaseEnv := os.LookupEnv("RENT_TEST_MYSQL_DSN")
+	presence, _ := json.Marshal(map[string]bool{"database": databaseEnv, "testDatabase": testDatabaseEnv})
+	_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "database-env.json"), presence, 0600)
 	decoder := json.NewDecoder(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	loggedIn := false
@@ -151,6 +155,8 @@ func testService(t *testing.T) (*Service, string) {
 }
 
 func TestProtocolLoginForwardAndLogout(t *testing.T) {
+	t.Setenv("RENT_MYSQL_DSN", "fixture-database-credential")
+	t.Setenv("RENT_TEST_MYSQL_DSN", "fixture-test-database-credential")
 	s, capture := testService(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -176,6 +182,14 @@ func TestProtocolLoginForwardAndLogout(t *testing.T) {
 	}
 	if result.Text != "原始回复\n  保留空格 <script>" {
 		t.Fatalf("output was rewritten: %q", result.Text)
+	}
+	envPresence, err := os.ReadFile(filepath.Join(capture, "database-env.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var databaseEnv map[string]bool
+	if json.Unmarshal(envPresence, &databaseEnv) != nil || len(databaseEnv) != 2 || databaseEnv["database"] || databaseEnv["testDatabase"] {
+		t.Fatal("database credentials inherited by Codex child process")
 	}
 	thread, _ := os.ReadFile(filepath.Join(capture, "thread.json"))
 	var params map[string]any

@@ -6,13 +6,17 @@ import (
 	"os"
 	"time"
 
+	"github.com/Felix-cy110/house-rent-table/internal/config"
 	"github.com/Felix-cy110/house-rent-table/internal/persistence"
 )
 
 func main() {
+	if err := config.LoadEnvFile(".env"); err != nil {
+		log.Fatal(err)
+	}
 	dsn := os.Getenv("RENT_MYSQL_DSN")
 	if dsn == "" {
-		log.Fatal("请通过 RENT_MYSQL_DSN 指定已创建的目标数据库")
+		log.Fatal("请在 .env 或环境变量中通过 RENT_MYSQL_DSN 指定已创建的目标数据库")
 	}
 	store, err := persistence.OpenMySQL(dsn)
 	if err != nil {

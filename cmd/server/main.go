@@ -14,11 +14,15 @@ import (
 	"time"
 
 	"github.com/Felix-cy110/house-rent-table/internal/codex"
+	"github.com/Felix-cy110/house-rent-table/internal/config"
 	"github.com/Felix-cy110/house-rent-table/internal/httpapi"
 	"github.com/Felix-cy110/house-rent-table/internal/persistence"
 )
 
 func main() {
+	if err := config.LoadEnvFile(".env"); err != nil {
+		log.Fatal(err)
+	}
 	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
 	webDir := flag.String("web-dir", "web/dist", "built frontend directory")
 	template := flag.String("template", "", "optional XLSX template path")

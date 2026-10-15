@@ -111,7 +111,7 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		key = strings.ToUpper(key)
-		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") || key == providerKeyEnv {
+		if strings.HasPrefix(key, "CODEX_") || strings.HasPrefix(key, "OPENAI_") || key == providerKeyEnv || key == "RENT_MYSQL_DSN" || key == "RENT_TEST_MYSQL_DSN" {
 			continue
 		}
 		cmd.Env = append(cmd.Env, entry)
