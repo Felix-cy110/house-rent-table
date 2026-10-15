@@ -223,7 +223,7 @@ func TestRepositoryTemplate(t *testing.T) {
 	}
 	expectedLabels := []string{
 		"房租多少钱一个月", "押几付几", "中介费多少", "水费", "电费", "保洁费",
-		"物业费多少", "燃气费", "首月总共要付多少", "以后每个月要付多少钱", "小区地点", "中介姓名",
+		"物业费多少", "燃气费", "首月总共要付多少", "以后每个月要付多少钱", "小区地点", "房间大小/平方", "朝向", "中介姓名",
 	}
 	if len(result.Document.Fields) != len(expectedLabels) {
 		t.Fatalf("template fields: want %d, got %d", len(expectedLabels), len(result.Document.Fields))
@@ -250,8 +250,11 @@ func TestRepositoryTemplate(t *testing.T) {
 			break
 		}
 	}
-	if locationIndex < 0 || locationIndex+1 >= len(result.Document.Fields) || result.Document.Fields[locationIndex+1].Label != "中介姓名" {
-		t.Fatal("the default template must place 小区地点 immediately above 中介姓名")
+	if locationIndex < 0 || locationIndex+3 >= len(result.Document.Fields) ||
+		result.Document.Fields[locationIndex+1].Label != "房间大小/平方" ||
+		result.Document.Fields[locationIndex+2].Label != "朝向" ||
+		result.Document.Fields[locationIndex+3].Label != "中介姓名" {
+		t.Fatal("the default template must place 房间大小/平方 and 朝向 between 小区地点 and 中介姓名")
 	}
 	// Fill the actual template in memory to verify that the new field's value
 	// and evidence source survive import without adding a business-specific type.
@@ -308,6 +311,53 @@ func TestRepositoryTemplate(t *testing.T) {
 			}
 			if field := filled.Document.Fields[locationIndex]; field.Value == nil || *field.Value != "测试小区 2 栋" {
 				t.Fatal("monthly payment overwrote the following location field")
+			}
+		})
+	}
+	if err := workbook.SetCellValue("Sheet1", "B15", "测试中介"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name        string
+		area        any
+		orientation any
+		wantArea    *string
+		wantFacing  *string
+	}{
+		{"room details blank", nil, nil, nil, nil},
+		{"room area zero", 0, "待确认", stringPointer("0"), stringPointer("待确认")},
+		{"room area decimal", 28.5, "南北通透", stringPointer("28.5"), stringPointer("南北通透")},
+		{"room details original text", "  约28.5平方米（房间使用面积）  ", "  朝南\n窗户向东  ", stringPointer("  约28.5平方米（房间使用面积）  "), stringPointer("  朝南\n窗户向东  ")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for cell, value := range map[string]any{"B13": tt.area, "B14": tt.orientation} {
+				if err := workbook.SetCellValue("Sheet1", cell, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			buffer, err := workbook.WriteToBuffer()
+			if err != nil {
+				t.Fatal(err)
+			}
+			filled, err := Parse(context.Background(), buffer, "房间信息.xlsx")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for offset, want := range []*string{tt.wantArea, tt.wantFacing} {
+				index := locationIndex + 1 + offset
+				got, source := filled.Document.Fields[index], result.Document.Fields[index]
+				if got.ID != source.ID || got.Label != source.Label || got.Sheet != source.Sheet || got.Cell != source.Cell || got.Bold {
+					t.Fatalf("room detail source or regular font changed: %+v", got)
+				}
+				if (got.Value == nil) != (want == nil) || (want != nil && *got.Value != *want) {
+					t.Fatalf("room detail value changed: got %v, want %v", got.Value, want)
+				}
+			}
+			if field := filled.Document.Fields[locationIndex]; field.Value == nil || *field.Value != "测试小区 2 栋" {
+				t.Fatal("room details overwrote the location")
+			}
+			if field := filled.Document.Fields[locationIndex+3]; field.Value == nil || *field.Value != "测试中介" || field.Cell != "B15" {
+				t.Fatal("room details overwrote or displaced the agent")
 			}
 		})
 	}
