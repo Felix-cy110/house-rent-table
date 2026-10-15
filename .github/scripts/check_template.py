@@ -74,6 +74,36 @@ def check_template(root):
     require(len(monthly) == 1, "模板应包含一项“以后每个月要付多少钱”")
     require(monthly[0] == first_month[0] + 1, "每月费用应紧接在首月费用下方")
 
+    location = [row for row, label in labels.items() if label == "小区地点"]
+    require(len(location) == 1, "模板应包含一项“小区地点”")
+    for offset, label in enumerate(("房间大小/平方", "朝向", "中介姓名"), start=1):
+        rows = [row for row, value in labels.items() if value == label]
+        require(rows == [location[0] + offset], f"“{label}”的位置不正确，应按小区地点、房间大小/平方、朝向、中介姓名排列")
+
+    styles = documents["xl/styles.xml"]
+    fonts = styles.findall("s:fonts/s:font", NS)
+    cell_styles = styles.findall("s:cellXfs/s:xf", NS)
+    for number in (location[0] + 1, location[0] + 2):
+        row = sheet.find(f"s:sheetData/s:row[@r='{number}']", NS)
+        for column, index in (("A", 1), ("B", 2)):
+            address = f"{column}{number}"
+            cell = row.find(f"s:c[@r='{address}']", NS)
+            column_style = next((col.get("style", "0") for col in sheet.findall("s:cols/s:col", NS)
+                                 if int(col.get("min")) <= index <= int(col.get("max"))), "0")
+            style_id = row.get("s", column_style)
+            if cell is not None:
+                style_id = cell.get("s", style_id)
+            font = fonts[int(cell_styles[int(style_id)].get("fontId", "0"))]
+            bold = font.find("s:b", NS)
+            require(bold is None or bold.get("val", "1") in ("0", "false"), f"新增两行不应加粗：{address}")
+            if cell is not None:
+                text = cell.find("s:is", NS)
+                if cell.get("t") == "s":
+                    text = strings.findall("s:si", NS)[int(cell.findtext("s:v", namespaces=NS))]
+                if text is not None:
+                    require(all(mark.get("val", "1") in ("0", "false") for mark in text.findall("s:r/s:rPr/s:b", NS)),
+                            f"新增两行的文字不应加粗：{address}")
+
     print(f"检查通过：{links[0]}")
 
 

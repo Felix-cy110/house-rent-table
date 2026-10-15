@@ -43,19 +43,38 @@ test('同名文件重新上传可增删和重排字段，刷新不保留内容',
   expect(await page.evaluate(() => localStorage.length)).toBe(0);
 });
 
-test('说明表头下的小区地点按原顺序和来源显示', async ({ page }) => {
+test('小区地点后的房间大小和朝向按原文显示并发送分析', async ({ page }) => {
+  let sent: { fields: { label: string; value: string | null; cell: string; bold: boolean }[] } | undefined;
+  await page.route('**/api/analyze', route => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { text: '测试回复' } });
+  });
+  const area = '  约28.5平方米（房间使用面积）  ';
+  const orientation = '  朝南\n窗户向东  ';
   await page.goto('/');
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([
-    ['详细填写，不要含糊', '数值'], ['小区地点', '测试小区 2 栋'], ['中介姓名', null],
+    ['详细填写，不要含糊', '数值'], ['小区地点', '测试小区 2 栋'],
+    ['房间大小/平方', area], ['朝向', orientation], ['中介姓名', null],
   ]));
-  await expect(page.getByText('2 个项目，1 项未填写')).toBeVisible();
+  await expect(page.getByText('4 个项目，1 项未填写')).toBeVisible();
   const rows = page.locator('#field-list tr');
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(4);
   await expect(rows.nth(0)).toContainText('小区地点');
   await expect(rows.nth(0)).toContainText('Sheet1 · B2');
   await expect(rows.nth(0).getByRole('cell')).toHaveText('测试小区 2 栋');
-  await expect(rows.nth(1)).toContainText('中介姓名');
-  await expect(rows.nth(1).getByRole('cell')).toHaveText('未填写');
+  for (const [index, label, value, cell] of [[1, '房间大小/平方', area, 'B3'], [2, '朝向', orientation, 'B4']] as const) {
+    await expect(rows.nth(index)).toContainText(label);
+    await expect(rows.nth(index)).toContainText(`Sheet1 · ${cell}`);
+    expect(await rows.nth(index).getByRole('cell').textContent()).toBe(value);
+    await expect(rows.nth(index).locator('strong')).toHaveCount(0);
+  }
+  await expect(rows.nth(3)).toContainText('中介姓名');
+  await expect(rows.nth(3).getByRole('cell')).toHaveText('未填写');
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  await expect(page.locator('.codex-response')).toHaveText('测试回复');
+  expect(sent?.fields.map(field => field.label)).toEqual(['小区地点', '房间大小/平方', '朝向', '中介姓名']);
+  expect(sent?.fields[1]).toMatchObject({ value: area, cell: 'B3', bold: false });
+  expect(sent?.fields[2]).toMatchObject({ value: orientation, cell: 'B4', bold: false });
 });
 
 test('首月之后的每月费用按原文展示并发送分析', async ({ page }) => {
@@ -173,7 +192,7 @@ test('空白模板下载后可重新上传，说明表头不作为业务字段',
   const response = await imported;
   expect(response.status()).toBe(200);
   const { document } = await response.json();
-  expect(document.fields.length).toBe(12);
+  expect(document.fields.length).toBe(14);
   expect(document.fields.every((field: { cell: string; value: string | null }) => field.cell !== 'B1' && field.value === null)).toBe(true);
   await expect(page.getByText(`${document.fields.length} 个项目，${document.fields.length} 项未填写`)).toBeVisible();
   await expect(page.locator('#field-list tr')).toHaveCount(document.fields.length);
@@ -185,7 +204,11 @@ test('空白模板下载后可重新上传，说明表头不作为业务字段',
   await expect(page.locator('#field-list tr').nth(9)).toContainText('以后每个月要付多少钱');
   const locationIndex = document.fields.findIndex((field: { label: string }) => field.label === '小区地点');
   expect(locationIndex).toBeGreaterThanOrEqual(0);
-  expect(document.fields[locationIndex + 1]?.label).toBe('中介姓名');
   await expect(page.locator('#field-list tr').nth(locationIndex)).toContainText('小区地点');
-  await expect(page.locator('#field-list tr').nth(locationIndex + 1)).toContainText('中介姓名');
+  for (const [offset, label, cell] of [[1, '房间大小/平方', 'B13'], [2, '朝向', 'B14'], [3, '中介姓名', 'B15']] as const) {
+    expect(document.fields[locationIndex + offset]).toMatchObject({ label, cell, value: null, bold: false });
+    const row = page.locator('#field-list tr').nth(locationIndex + offset);
+    await expect(row).toContainText(label);
+    await expect(row.locator('strong')).toHaveCount(0);
+  }
 });

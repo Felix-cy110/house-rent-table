@@ -165,6 +165,11 @@ func TestTemplateDownload(t *testing.T) {
 	if err := workbook.SetCellValue("Sheet1", "B11", value); err != nil {
 		t.Fatal(err)
 	}
+	for cell, value := range map[string]any{"B13": 28.5, "B14": "南北通透", "B15": "测试中介"} {
+		if err := workbook.SetCellValue("Sheet1", cell, value); err != nil {
+			t.Fatal(err)
+		}
+	}
 	filled, err := workbook.WriteToBuffer()
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +183,7 @@ func TestTemplateDownload(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &imported); err != nil {
 		t.Fatal(err)
 	}
-	if len(imported.Document.Fields) != 12 {
+	if len(imported.Document.Fields) != 14 {
 		t.Fatalf("downloaded template field count: %d", len(imported.Document.Fields))
 	}
 	monthly := imported.Document.Fields[9]
@@ -190,6 +195,17 @@ func TestTemplateDownload(t *testing.T) {
 		imported.Document.Fields[10].Label != "小区地点" || imported.Document.Fields[10].Cell != "B12" {
 		t.Fatalf("monthly payment or adjacent fields changed: %+v", imported.Document.Fields)
 	}
+	for offset, want := range []struct{ label, value, cell string }{
+		{"房间大小/平方", "28.5", "B13"},
+		{"朝向", "南北通透", "B14"},
+		{"中介姓名", "测试中介", "B15"},
+	} {
+		field := imported.Document.Fields[11+offset]
+		if field.Label != want.label || field.Value == nil || *field.Value != want.value ||
+			field.Cell != want.cell || field.Sheet != "Sheet1" || field.Bold {
+			t.Fatalf("room detail or following agent changed: %+v", field)
+		}
+	}
 	payload, err := json.Marshal(imported.Document)
 	if err != nil {
 		t.Fatal(err)
@@ -199,6 +215,6 @@ func TestTemplateDownload(t *testing.T) {
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, request)
 	if w.Code != http.StatusOK || !bytes.Equal(received, payload) {
-		t.Fatalf("monthly payment document was not forwarded intact: %d %s", w.Code, w.Body.String())
+		t.Fatalf("template fields were not forwarded intact: %d %s", w.Code, w.Body.String())
 	}
 }
