@@ -1,0 +1,86 @@
+name: 问题反馈
+description: 反馈可复现的错误，帮助定位和修复问题。
+title: "[问题反馈] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请阅读 README 并搜索已有 Issue。
+        请使用虚构或脱敏数据，不要上传 API Key、OAuth token、`.env`、数据库连接串、真实姓名、电话或详细住址。
+        社区行为问题请按仓库根目录 CODE_OF_CONDUCT.md 中的方式反馈。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已阅读相关说明并搜索已有 Issue，未找到相同问题。
+          required: true
+        - label: 我已移除描述、截图、日志和附件中的凭据及个人信息。
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题发生在哪个部分？
+      options:
+        - Excel 模板、下载或导入
+        - 登录、供应商连接或 CC Switch 导入
+        - AI 分析、费用计算或报告
+        - MySQL 持久化或中介反馈
+        - 页面显示或交互
+        - 安装、构建或启动
+        - 其他或暂不确定
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 版本与运行环境
+      description: 填写实际使用的版本；不涉及的项目可写「不适用」。不要粘贴配置文件或完整环境变量。
+      placeholder: |
+        项目版本或提交号（可运行 git rev-parse --short HEAD）：
+        操作系统与版本：
+        浏览器与版本：
+        Go / Node.js 版本：
+        Codex CLI 版本（如涉及）：
+        登录方式或供应商类型（如涉及，不填写 Key）：
+        MySQL 版本（如涉及）：
+        启动方式或命令：
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 从启动应用开始，说明具体操作和触发条件。
+      placeholder: |
+        1. 使用……启动应用
+        2. 上传……格式的表格
+        3. 点击……
+        4. 出现……
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      description: 你期望应用怎样处理？涉及计算时，请给出输入、单位、付款周期和预期结果。
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 描述实际结果、页面错误提示及出现频率，可附脱敏截图。
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏错误日志（可选）
+      description: 仅保留相关报错，删除认证信息、完整请求内容、个人目录和数据库凭据。
+      render: text
+  - type: textarea
+    id: sample
+    attributes:
+      label: 最小样例或补充信息（可选）
+      description: 表格问题可附使用虚构数据制作的最小 XLSX；说明项目名、填写值、加粗位置和工作表布局。分析问题可附脱敏原文、计算依据和已尝试的方法。
