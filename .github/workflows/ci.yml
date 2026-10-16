@@ -35,6 +35,37 @@ jobs:
           go-version-file: go.mod
       - run: go test -race ./...
       - run: go vet ./...
+  frontend:
+    name: 前端构建与浏览器测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 安装前端依赖
+        run: npm ci
+      - name: 安装 Chromium 和系统依赖
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: 构建前端并运行浏览器测试
+        run: npm run test:e2e -- --forbid-only
+      - name: 保存失败截图与执行跟踪
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-test-results
+          path: web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
   check-template:
     name: 检查租房模板
     runs-on: ubuntu-latest
