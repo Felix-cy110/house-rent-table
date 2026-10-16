@@ -17,7 +17,7 @@ func TestMigrationMatchesPublishedDesign(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")), migrationSource()) {
+	if !bytes.Equal(bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n")), migrationSource(1)) {
 		t.Fatal("published DDL differs from executable migration")
 	}
 }

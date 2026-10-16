@@ -108,6 +108,8 @@ npm --prefix web run dev
 
 MySQL 使用任务表、房源业务快照表和费用明细表；地点、面积、朝向、押付规则、金额、单位和周期均有明确业务列，JSON 辅助保留原文和证据。标准对象经 Schema 与业务组合校验后入库，费用用 DECIMAL 存储。待写任务和已校验结果先在本地落盘，数据库恢复后按任务 ID 幂等补写，不重复调用 AI。当前不保存主分析报告，也不提供历史列表界面。字段定义、迁移和环境变量见 [持久化说明](docs/persistence.md)。
 
+检查结果下的“坑人”按钮会读取本次表格的“中介姓名”，将反馈直接保存到 MySQL 的 `rental_broker_feedback`（坑人记录表）：新姓名的 `feedback_count` 为 1，已有姓名每次反馈加 1。姓名去除首尾空白后精确匹配，同名中介合并累计；不同姓名分别计数。保存成功才显示累计次数，请求期间禁用按钮；缺少姓名、存在多个不同姓名或数据库不可用时显示原因。此操作不依赖后台 AI 提取完成。已使用 V1 数据库的环境需重新运行 `go run ./cmd/migrate`，再重启服务以启用接口。
+
 Agent 的接入点是 `internal/analysis.Analyzer`：接收校验过的原始 JSON 请求体，返回 `{ "text": "Codex 的最终回复" }`。`internal/codex` 使用 stdio JSON-RPC 管理官方 `codex app-server`，通过 `thread/start` 和 `turn/start` 发起分析。分析指引通过独立的 `developerInstructions` 传递，不拼入用户数据。保留字段顺序、重复名称、空值、换行和来源，既不归一化金额，也不摘要或截断数据；超出限制则明确报错。
 
 只有 `turn/completed` 的状态为 `completed` 时才返回成功，失败或中断不会将部分回复当作分析结论。页面呈现 Markdown 表格和 HTTP(S) 来源链接，禁用模型输出中的 HTML 和图片，并可展开查看逐字保留的回复原文。更换文件、刷新和取消会中止旧请求，后端通知 Codex 中断；一次只允许一项分析或登录变更，避免分析过程中切换账号。
@@ -125,6 +127,7 @@ Codex 在独立工作目录、只读沙箱下运行，开启 `web_search="live"`
 | `POST /api/codex/login` | `{ "type": "chatgpt" }`；或 `{ "type": "apiKey", "apiKey": "...", "baseUrl": "https://example.com/v1", "model": "供应商模型名" }`；或 `{ "type": "apiKey", "source": "ccswitch", "configDir": "可选绝对目录" }` | 发起 OAuth、登记 API Key 或导入 CC Switch 生效配置；默认 OpenAI 可省略地址和模型，导入不能混入手动配置 |
 | `POST /api/codex/logout` | 无 | 取消等待中的授权并退出当前登录 |
 | `POST /api/analyze` | 上述 `Document` JSON | 原文发送至 Codex，成功返回 `{ "text": "..." }` |
+| `POST /api/broker-feedback` | `{ "brokerName": "中介姓名" }` | 按姓名新增或累加坑人反馈，提交成功后返回 `{ "brokerName": "中介姓名", "feedbackCount": 1 }`；姓名为空或超过 256 字符返回 400，数据库未配置或保存无法确认返回 503 |
 
 错误格式为 `{ "error": { "code": "...", "message": "中文说明" } }`。配置或导入无效返回 400，未登录返回 401，忙碌返回 409，Codex 不可用返回 503，超时返回 504，上游失败返回 502。不会将上游可能含凭据的原始错误直接返回浏览器。API 响应禁用缓存，并检查跨来源浏览器请求。
 

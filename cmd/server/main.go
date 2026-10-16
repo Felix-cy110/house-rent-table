@@ -42,6 +42,7 @@ func main() {
 	agent := codex.New(codex.Options{Binary: *codexBinary, Home: *codexHome, Model: *codexModel, RentPremiumTolerance: rentTolerance})
 	defer agent.Close()
 	var background *persistence.Worker
+	var feedbackStore httpapi.BrokerFeedbackStore
 	var defaultCurrency *string
 	if dsn := os.Getenv("RENT_MYSQL_DSN"); dsn != "" {
 		currency, provided := os.LookupEnv("RENT_DEFAULT_CURRENCY")
@@ -59,6 +60,7 @@ func main() {
 			log.Fatal(err)
 		}
 		defer store.Close()
+		feedbackStore = store
 		if *queueDir == "" {
 			root, err := os.UserConfigDir()
 			if err != nil {
@@ -92,7 +94,7 @@ func main() {
 	}
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           httpapi.New(httpapi.Options{Analyzer: agent, Auth: agent, LocalOnly: true, WebDir: *webDir, TemplatePath: *template, Persistence: background, DefaultCurrency: defaultCurrency}),
+		Handler:           httpapi.New(httpapi.Options{Analyzer: agent, Auth: agent, LocalOnly: true, WebDir: *webDir, TemplatePath: *template, Persistence: background, BrokerFeedback: feedbackStore, DefaultCurrency: defaultCurrency}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 6 * time.Minute, IdleTimeout: 60 * time.Second,
 	}
