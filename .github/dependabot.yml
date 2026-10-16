@@ -1,0 +1,67 @@
+version: 2
+
+# 常规版本更新每周一按北京时间检查。
+# 分组仅覆盖小版本和补丁更新；大版本更新独立提出，便于评估兼容性。
+# 中文前缀保留 Conventional Commits 格式；Dependabot 生成的版本明细和正文仍可能为英文。
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: all
+    commit-message:
+      # 末尾空格用于避免 Dependabot 再追加一个冒号。
+      prefix: "chore(deps): 更新 Go 依赖 "
+    groups:
+      go-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-type: all
+    commit-message:
+      prefix: "chore(deps): 更新前端依赖 "
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "10:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps): 更新 GitHub Actions 依赖 "
+    groups:
+      actions-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
