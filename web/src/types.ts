@@ -22,6 +22,8 @@ export interface AnalysisResult {
   text: string;
 }
 
+export interface BrokerFeedback { brokerName: string; feedbackCount: number }
+
 export interface PersistenceReceipt { status: 'queued' | 'failed'; taskId: string | null }
 export interface PersistenceStatus { taskId: string; stage: 'EXTRACT' | 'PERSIST'; status: 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'SUCCEEDED' | 'FAILED'; message?: string }
 

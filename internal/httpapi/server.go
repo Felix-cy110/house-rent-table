@@ -29,6 +29,7 @@ type Options struct {
 	WebDir          string
 	TemplatePath    string
 	Persistence     *persistence.Worker
+	BrokerFeedback  BrokerFeedbackStore
 	DefaultCurrency *string
 }
 
@@ -38,6 +39,7 @@ func New(opts Options) http.Handler {
 	}
 	mux := http.NewServeMux()
 	registerAuth(mux, opts.Auth)
+	registerBrokerFeedback(mux, opts.BrokerFeedback)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})

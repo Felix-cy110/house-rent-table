@@ -1,5 +1,5 @@
 import './style.css';
-import { analyze, APIError, importExcel, persistenceStatus } from './api';
+import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
@@ -173,15 +173,42 @@ async function upload(file: File) {
   }
 }
 
-function renderAnalysis(result: AnalysisResult) {
+function renderAnalysis(result: AnalysisResult, doc: RentalDocument) {
   const reportButton = textElement('button', '坑人', 'choose-file');
   reportButton.type = 'button';
-  reportButton.addEventListener('click', () => {
-    window.alert('已经记录坑人中介');
+  const feedbackStatus = textElement('p', '', 'message');
+  feedbackStatus.setAttribute('role', 'status');
+  feedbackStatus.hidden = true;
+  const names = [...new Set(doc.fields.filter(field => field.label.trim() === '中介姓名')
+    .map(field => field.value?.trim()).filter((name): name is string => Boolean(name)))];
+  reportButton.addEventListener('click', async () => {
+    if (reportButton.disabled) return;
+    feedbackStatus.hidden = false;
+    feedbackStatus.className = 'message error';
+    if (names.length !== 1) {
+      feedbackStatus.textContent = names.length === 0
+        ? '表格中缺少中介姓名，请填写“中介姓名”后重新上传并分析。'
+        : '表格中有多个不同的中介姓名，请确认唯一姓名后重新上传并分析。';
+      return;
+    }
+    reportButton.disabled = true;
+    reportButton.textContent = '正在记录…';
+    feedbackStatus.className = 'message';
+    feedbackStatus.textContent = '正在保存反馈…';
+    try {
+      const feedback = await reportBroker(names[0]!);
+      feedbackStatus.textContent = `已经记录坑人中介：${feedback.brokerName}，累计反馈 ${feedback.feedbackCount} 次。`;
+    } catch (error) {
+      feedbackStatus.className = 'message error';
+      feedbackStatus.textContent = error instanceof APIError ? error.message : '无法连接服务，反馈未能确认保存。';
+    } finally {
+      reportButton.disabled = false;
+      reportButton.textContent = '坑人';
+    }
   });
   const actions = textElement('div', '', 'analysis-action');
   actions.append(reportButton);
-  analysisContent.replaceChildren(renderReport(result.text), actions);
+  analysisContent.replaceChildren(renderReport(result.text), actions, feedbackStatus);
 }
 
 fileInput.addEventListener('change', () => {
@@ -210,7 +237,8 @@ dropZone.addEventListener('drop', e => {
 element('clear-button').addEventListener('click', () => { clearDocument(); fileInput.focus(); });
 analyzeButton.addEventListener('click', async () => {
   if (!currentDocument) return;
-  const payload = JSON.stringify(currentDocument, null, 2);
+  const analyzedDocument = currentDocument;
+  const payload = JSON.stringify(analyzedDocument, null, 2);
   const requestGeneration = generation;
   const saveGeneration = ++persistenceGeneration;
   showMessage('persistence-status', '');
@@ -227,7 +255,7 @@ analyzeButton.addEventListener('click', async () => {
       if (receipt.status === 'failed') showMessage('persistence-status', '本次后台保存任务未创建，分析报告仍可正常生成。');
       else if (receipt.taskId) void trackPersistence(receipt.taskId, saveGeneration);
     });
-    if (requestGeneration === generation) renderAnalysis(result);
+    if (requestGeneration === generation) renderAnalysis(result, analyzedDocument);
   } catch (error) {
     if (requestGeneration !== generation) return;
     analysisContent.replaceChildren(textElement('p', error instanceof APIError ? error.message : '无法连接分析服务，请稍后重试。', 'message error'));

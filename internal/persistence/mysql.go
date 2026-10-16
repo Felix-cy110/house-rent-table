@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,11 +16,13 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-//go:embed migrations/001_rental.sql
+//go:embed migrations/*.sql
 var migrations embed.FS
 
-func migrationSource() []byte {
-	raw, _ := migrations.ReadFile("migrations/001_rental.sql")
+var migrationFiles = []string{"001_rental.sql", "002_broker_feedback.sql"}
+
+func migrationSource(version int) []byte {
+	raw, _ := migrations.ReadFile("migrations/" + migrationFiles[version-1])
 	return bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 }
 
@@ -80,40 +81,42 @@ func (s *MySQL) Migrate(ctx context.Context) error {
 	if err != nil {
 		return errors.New("无法创建迁移记录")
 	}
-	raw := migrationSource()
-	sum := sha256.Sum256(raw)
-	checksum := hex.EncodeToString(sum[:])
-	var applied string
-	err = conn.QueryRowContext(ctx, "SELECT checksum FROM rental_schema_migrations WHERE version=1").Scan(&applied)
-	if err == nil {
-		if applied != checksum {
-			return errors.New("迁移 1 校验和不匹配，请勿修改已执行的迁移")
-		}
-		return nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return errors.New("无法读取迁移版本")
-	}
-	lines := []string{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "--") {
-			lines = append(lines, line)
-		}
-	}
-	// This version only contains CREATE TABLE statements, without procedural SQL.
-	for _, statement := range strings.Split(strings.Join(lines, "\n"), ";") {
-		statement = strings.TrimSpace(statement)
-		if statement == "" {
+	for index := range migrationFiles {
+		version := index + 1
+		raw := migrationSource(version)
+		checksum := fmt.Sprintf("%x", sha256.Sum256(raw))
+		var applied string
+		err = conn.QueryRowContext(ctx, "SELECT checksum FROM rental_schema_migrations WHERE version=?", version).Scan(&applied)
+		if err == nil {
+			if applied != checksum {
+				return fmt.Errorf("迁移 %d 校验和不匹配，请勿修改已执行的迁移", version)
+			}
 			continue
 		}
-		statement = strings.Replace(statement, "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
-		if _, err = conn.ExecContext(ctx, statement); err != nil {
-			return errors.New("创建租房业务表失败，请检查 MySQL 版本、权限及现有表结构")
+		if !errors.Is(err, sql.ErrNoRows) {
+			return errors.New("无法读取迁移版本")
 		}
-	}
-	_, err = conn.ExecContext(ctx, "INSERT INTO rental_schema_migrations (version,checksum,applied_at) VALUES (1,?,?)", checksum, time.Now().UTC())
-	if err != nil {
-		return errors.New("保存迁移版本失败")
+		lines := []string{}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+				lines = append(lines, line)
+			}
+		}
+		// These migrations only contain CREATE TABLE statements, without procedural SQL.
+		for _, statement := range strings.Split(strings.Join(lines, "\n"), ";") {
+			statement = strings.TrimSpace(statement)
+			if statement == "" {
+				continue
+			}
+			statement = strings.Replace(statement, "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
+			if _, err = conn.ExecContext(ctx, statement); err != nil {
+				return errors.New("创建租房业务表失败，请检查 MySQL 版本、权限及现有表结构")
+			}
+		}
+		_, err = conn.ExecContext(ctx, "INSERT INTO rental_schema_migrations (version,checksum,applied_at) VALUES (?,?,?)", version, checksum, time.Now().UTC())
+		if err != nil {
+			return errors.New("保存迁移版本失败")
+		}
 	}
 	return nil
 }
@@ -258,12 +261,14 @@ func (s *MySQL) GetSummary(ctx context.Context, id string) (Summary, error) {
 }
 
 func (s *MySQL) CheckMigration(ctx context.Context) error {
-	raw := migrationSource()
-	sum := sha256.Sum256(raw)
-	var checksum string
-	err := s.db.QueryRowContext(ctx, "SELECT checksum FROM rental_schema_migrations WHERE version=1").Scan(&checksum)
-	if err != nil || checksum != fmt.Sprintf("%x", sum) {
-		return errors.New("MySQL 尚未执行匹配的迁移；任务将保留在本地等待补写")
+	for index := range migrationFiles {
+		version := index + 1
+		sum := sha256.Sum256(migrationSource(version))
+		var checksum string
+		err := s.db.QueryRowContext(ctx, "SELECT checksum FROM rental_schema_migrations WHERE version=?", version).Scan(&checksum)
+		if err != nil || checksum != fmt.Sprintf("%x", sum) {
+			return fmt.Errorf("MySQL 尚未执行匹配的迁移 %d，请运行 go run ./cmd/migrate；后台任务将保留在本地等待补写", version)
+		}
 	}
 	return nil
 }

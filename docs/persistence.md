@@ -36,9 +36,16 @@ MySQL 连接自动使用 utf8mb4、UTC 和严格 SQL 模式。所有时间按 UT
 - `rental_extraction_task`：输入快照、版本、模型、提取结果及任务状态。
 - `rental_import_record`：地点、面积/范围、朝向、中介姓名、月租、押付规则和用户报价。
 - `rental_charge`：收费类型、金额/单价/比例、单位、周期、付款时间和来源。
+- `rental_broker_feedback`：坑人记录表，以 `broker_name` 为主键，`feedback_count` 为反馈坑人次数，保存首次及最近反馈时间。
 - `rental_schema_migrations`：迁移版本及校验和。
 
 完整字段说明见 [V1 设计](design/rental-persistence-v1/README.md)。可执行契约位于 `internal/extraction/schema.json`，Go 类型位于 `internal/extraction/types.go`，DDL 位于 `internal/persistence/migrations/001_rental.sql`。设计目录保留可评审副本，测试核对 Schema 一致性。
+
+V2 的 `internal/persistence/migrations/002_broker_feedback.sql` 新增坑人记录表。再次运行 `go run ./cmd/migrate` 会按顺序核对已执行版本的校验和，再执行尚未应用的迁移；V1 的 SQL 和已有业务数据保持原样，重复运行不会清空或重复建表。升级后重启服务。
+
+用户点击分析结果下的“坑人”时，前端从本次原始表格的“中介姓名”字段取值，调用 `POST /api/broker-feedback`，无需等待后台提取。后端去除姓名首尾空白并校验非空、最多 256 字符，使用区分字符的唯一主键和 `INSERT ... ON DUPLICATE KEY UPDATE feedback_count=feedback_count+1` 实现首次记 1、再次加 1。同名合并累计，不额外按用户或文件去重；不同姓名独立计数。每次提交在同一事务内累加并读取次数，提交成功后才回复页面；并发反馈不会丢失计数。
+
+反馈直接写入数据库，不进入后台队列。未配置 MySQL、尚未执行 V2 迁移或数据库不可用时返回明确错误，页面不显示保存成功，也不自动重试。提交时若连接中断，客户端可能无法确认是否已提交，再次主动点击会视为新反馈。
 
 金额以十进制字符串传输并直接写入 DECIMAL，不经二进制浮点数。零、未知、已含、免费分别保存；面积支持精确值、约数和范围。首月/后续月费保留用户报价，后台提取不重新核算或覆盖报价。V1 不执行年租折算月租等算术派生，原文口径无法直接映射时留空并记录问题。
 
@@ -76,7 +83,7 @@ npm --prefix web run test:e2e
 
 ```powershell
 $env:RENT_TEST_MYSQL_DSN = '测试账号:密码@tcp(127.0.0.1:3306)/rental_test'
-go test ./internal/persistence -run TestMySQLTransactions -count=1
+go test ./internal/persistence -run TestMySQL -count=1
 ```
 
 使用已安装 Codex 和本地模拟 Responses 服务验证 outputSchema，不访问真实供应商、不消耗模型额度：

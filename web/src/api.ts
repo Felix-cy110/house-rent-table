@@ -1,4 +1,4 @@
-import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection, PersistenceReceipt, PersistenceStatus } from './types';
+import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection, PersistenceReceipt, PersistenceStatus, BrokerFeedback } from './types';
 
 export class APIError extends Error {
   constructor(public code: string, message: string) {
@@ -40,6 +40,12 @@ export async function analyze(payload: string, signal: AbortSignal, onPersistenc
 
 export async function persistenceStatus(id: string): Promise<PersistenceStatus> {
   return readResponse<PersistenceStatus>(await fetch(`/api/persistence/tasks/${encodeURIComponent(id)}`));
+}
+
+export async function reportBroker(brokerName: string): Promise<BrokerFeedback> {
+  return readResponse<BrokerFeedback>(await fetch('/api/broker-feedback', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ brokerName }),
+  }));
 }
 
 export async function account(): Promise<CodexAccount> {

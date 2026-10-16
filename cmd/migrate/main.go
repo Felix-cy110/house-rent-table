@@ -28,5 +28,5 @@ func main() {
 	if err = store.Migrate(ctx); err != nil {
 		log.Fatal(err)
 	}
-	log.Print("租房业务数据库迁移完成（版本 1）")
+	log.Print("租房业务数据库迁移完成，所有迁移版本均已应用")
 }
