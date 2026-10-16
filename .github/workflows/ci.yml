@@ -29,7 +29,7 @@ jobs:
     env:
       RENT_TEST_MYSQL_DSN: root:ci-test-only@tcp(127.0.0.1:3306)/rental_test
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -43,7 +43,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -72,7 +72,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: 获取仓库文件
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: 设置 Python
         uses: actions/setup-python@v6
         with:
