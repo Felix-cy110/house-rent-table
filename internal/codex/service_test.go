@@ -69,6 +69,7 @@ func fakeServer() {
 			}
 			respond(map[string]any{"account": account, "requiresOpenaiAuth": !customProvider})
 		case "account/login/start":
+			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "login.json"), req.Params, 0600)
 			var params struct {
 				Type   string `json:"type"`
 				APIKey string `json:"apiKey"`
@@ -88,9 +89,24 @@ func fakeServer() {
 			loggedIn = false
 			respond(map[string]any{})
 		case "thread/start":
+			var params struct{ BaseInstructions string }
+			_ = json.Unmarshal(req.Params, &params)
+			if params.BaseInstructions == probeInstructions {
+				_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "probe-thread.json"), req.Params, 0600)
+				respond(map[string]any{"thread": map[string]string{"id": "thread-probe"}})
+				continue
+			}
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "thread.json"), req.Params, 0600)
 			respond(map[string]any{"thread": map[string]string{"id": "thread-test"}})
 		case "turn/start":
+			var target struct{ ThreadID string }
+			_ = json.Unmarshal(req.Params, &target)
+			if target.ThreadID == "thread-probe" {
+				if fakeProbe(encoder, req.ID, req.Params) {
+					return
+				}
+				continue
+			}
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "turn.json"), req.Params, 0600)
 			var params struct {
 				OutputSchema json.RawMessage `json:"outputSchema"`
@@ -134,6 +150,7 @@ func fakeServer() {
 			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "interrupted"), []byte("yes"), 0600)
 			respond(map[string]any{})
 		case "thread/unsubscribe":
+			_ = os.WriteFile(filepath.Join(os.Getenv("RENT_CODEX_CAPTURE"), "unsubscribed.json"), req.Params, 0600)
 			respond(map[string]any{})
 		default:
 			_ = encoder.Encode(map[string]any{"id": req.ID, "error": map[string]any{"code": -32601, "message": "unexpected method"}})
@@ -338,7 +355,7 @@ func TestMissingExecutable(t *testing.T) {
 }
 
 // Explicit opt-in smoke test against an installed CLI. It does not run inference
-// or touch the user's Codex profile; the placeholder key stays in a temp profile.
+// or touch the user's Codex profile.
 func TestInstalledCodexProtocol(t *testing.T) {
 	if os.Getenv("RENT_CODEX_SMOKE") != "1" {
 		t.Skip("set RENT_CODEX_SMOKE=1 to verify the installed CLI")
@@ -358,13 +375,9 @@ func TestInstalledCodexProtocol(t *testing.T) {
 	if err := s.Logout(ctx); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "sk-test-placeholder-not-a-real-key"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	a, err = s.Account(ctx)
-	if err != nil || !a.LoggedIn || a.AuthType != "apiKey" {
-		t.Fatalf("API key account: %+v %v", a, err)
+	if err != nil || a.LoggedIn || a.Pending {
+		t.Fatalf("account after OAuth cancellation: %+v %v", a, err)
 	}
 	c, err := s.connection(ctx)
 	if err != nil {
@@ -410,5 +423,5 @@ func TestInstalledCodexProtocol(t *testing.T) {
 	if err := s.Logout(ctx); err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("Installed Codex initialize / OAuth start-cancel / API key registration-logout / dynamic-tool thread / skill discovery passed; no inference performed")
+	fmt.Println("Installed Codex initialize / OAuth start-cancel / dynamic-tool thread / skill discovery passed; no inference performed")
 }

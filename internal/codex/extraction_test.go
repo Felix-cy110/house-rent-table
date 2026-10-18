@@ -116,6 +116,15 @@ func TestInstalledCodexExtractionSchema(t *testing.T) {
 	if _, err := s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "test-only-local-key", BaseURL: upstream.URL + "/v1", Model: "gpt-test-provider"}); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case body := <-captured:
+		encoded, _ := json.Marshal(body["input"])
+		if !strings.Contains(string(encoded), "Reply with OK.") {
+			t.Fatal("login did not verify the provider before extraction")
+		}
+	default:
+		t.Fatal("no native connection probe")
+	}
 	result, err := s.Extract(ctx, input)
 	if err != nil {
 		t.Fatal(err)
