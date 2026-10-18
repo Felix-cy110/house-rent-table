@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -77,17 +78,27 @@ func TestInstalledCodexCustomProvider(t *testing.T) {
 			if err != nil || result.Text != "本地供应商连接成功" {
 				t.Fatalf("local response was not delivered: %q %v", result.Text, err)
 			}
-			select {
-			case req := <-requests:
-				if req.Path != "/v1/responses" || req.Authorization != "Bearer test-only-local-provider-key" || req.Body["model"] != "gpt-test-provider" {
-					t.Fatal("wrong endpoint, credential or model reached local provider")
+			for _, probe := range []bool{true, false} {
+				select {
+				case req := <-requests:
+					if req.Path != "/v1/responses" || req.Authorization != "Bearer test-only-local-provider-key" || req.Body["model"] != "gpt-test-provider" {
+						t.Fatal("wrong endpoint, credential or model reached local provider")
+					}
+					encoded, _ := json.Marshal(req.Body["tools"])
+					if probe {
+						if strings.Contains(string(encoded), "rental_calculate") || strings.Contains(string(encoded), "web_search") {
+							t.Fatal("connection probe requested analysis tools")
+						}
+						input, _ := json.Marshal(req.Body["input"])
+						if !strings.Contains(string(input), "Reply with OK.") || strings.Contains(string(input), "schemaVersion") {
+							t.Fatal("connection probe did not use its minimal prompt")
+						}
+					} else if !strings.Contains(string(encoded), "rental_calculate") || !strings.Contains(string(encoded), "web_search") {
+						t.Fatal("analysis tools were not sent to provider")
+					}
+				default:
+					t.Fatal("local provider received no request")
 				}
-				encoded, _ := json.Marshal(req.Body["tools"])
-				if !strings.Contains(string(encoded), "rental_calculate") || !strings.Contains(string(encoded), "web_search") {
-					t.Fatal("analysis tools were not sent to provider")
-				}
-			default:
-				t.Fatal("local provider received no request")
 			}
 			if err := s.Logout(ctx); err != nil {
 				t.Fatal(err)
@@ -95,6 +106,52 @@ func TestInstalledCodexCustomProvider(t *testing.T) {
 			a, err = s.Account(ctx)
 			if err != nil || a.LoggedIn {
 				t.Fatal("custom provider logout did not disconnect")
+			}
+		})
+	}
+}
+
+func TestInstalledCodexRejectsInvalidProviderConnection(t *testing.T) {
+	if os.Getenv("RENT_CODEX_SMOKE") != "1" {
+		t.Skip("set RENT_CODEX_SMOKE=1 to verify failed connections against a local provider")
+	}
+	for _, tt := range []struct {
+		status int
+		want   string
+	}{{401, "Key 无效"}, {403, "访问权限"}, {404, "地址或模型不存在"}} {
+		t.Run(fmt.Sprint(tt.status), func(t *testing.T) {
+			requested := make(chan struct{}, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case requested <- struct{}{}:
+				default:
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.status)
+				fmt.Fprint(w, `{"error":{"message":"upstream-secret-must-not-leak","type":"invalid_request_error"}}`)
+			}))
+			defer upstream.Close()
+			s := New(Options{Home: t.TempDir()})
+			defer s.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			_, err := s.Login(ctx, analysis.LoginRequest{Type: "apiKey", APIKey: "test-only-local-provider-key", BaseURL: upstream.URL + "/v1", Model: "gpt-test-provider"})
+			var connectionError *analysis.ConnectionError
+			if !errors.As(err, &connectionError) || strings.Contains(err.Error(), "upstream-secret") {
+				t.Fatalf("unexpected provider validation result: %v", err)
+			}
+			// Some CLI versions omit HTTP metadata. They must still reject the
+			// connection with a useful local message without exposing upstream text.
+			if !strings.Contains(err.Error(), tt.want) && err.Error() != probeCallError(analysis.ErrFailed).Error() {
+				t.Fatalf("missing provider failure guidance: %v", err)
+			}
+			select {
+			case <-requested:
+			default:
+				t.Fatal("connection was rejected without probing the provider")
+			}
+			if s.client != nil {
+				t.Fatal("invalid provider became active")
 			}
 		})
 	}

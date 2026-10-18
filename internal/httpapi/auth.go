@@ -13,18 +13,18 @@ import (
 )
 
 func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
-	wrap := func(action func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
+	wrap := func(timeout time.Duration, action func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if auth == nil {
 				writeAgentError(w, analysis.ErrUnavailable)
 				return
 			}
-			ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 			action(w, r.WithContext(ctx))
 		}
 	}
-	mux.HandleFunc("GET /api/codex/account", wrap(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /api/codex/account", wrap(20*time.Second, func(w http.ResponseWriter, r *http.Request) {
 		account, err := auth.Account(r.Context())
 		if err != nil {
 			writeAgentError(w, err)
@@ -32,7 +32,7 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 		}
 		writeJSON(w, http.StatusOK, account)
 	}))
-	mux.HandleFunc("POST /api/codex/login", wrap(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/codex/login", wrap(60*time.Second, func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
 			writeError(w, 415, "invalid_content_type", "请使用 JSON 提交登录请求")
@@ -57,7 +57,7 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 		}
 		writeJSON(w, http.StatusOK, result)
 	}))
-	mux.HandleFunc("POST /api/codex/logout", wrap(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/codex/logout", wrap(20*time.Second, func(w http.ResponseWriter, r *http.Request) {
 		if err := auth.Logout(r.Context()); err != nil {
 			writeAgentError(w, err)
 			return
@@ -67,6 +67,17 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 }
 
 func writeAgentError(w http.ResponseWriter, err error) {
+	var connectionError *analysis.ConnectionError
+	if errors.As(err, &connectionError) {
+		status := http.StatusBadGateway
+		if errors.Is(err, context.DeadlineExceeded) {
+			status = http.StatusGatewayTimeout
+		} else if errors.Is(err, context.Canceled) {
+			status = http.StatusRequestTimeout
+		}
+		writeError(w, status, "connection_failed", connectionError.Message)
+		return
+	}
 	var configError *analysis.ConfigError
 	if errors.As(err, &configError) {
 		writeError(w, http.StatusBadRequest, "invalid_provider", configError.Message)

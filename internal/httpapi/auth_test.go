@@ -122,6 +122,26 @@ func TestInvalidLoginAndCrossOriginRequests(t *testing.T) {
 	}
 }
 
+func TestConnectionValidationErrorsReachBrowserWithoutUpstreamDetails(t *testing.T) {
+	for _, tt := range []struct {
+		cause  error
+		status int
+	}{
+		{errors.New("upstream-secret-must-not-leak"), http.StatusBadGateway},
+		{context.DeadlineExceeded, http.StatusGatewayTimeout},
+		{context.Canceled, http.StatusRequestTimeout},
+	} {
+		auth := &fakeAuth{fail: &analysis.ConnectionError{Message: "连接验证失败，请检查配置后重试", Cause: tt.cause}}
+		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(`{"type":"apiKey","apiKey":"test-only-secret"}`))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		New(Options{Auth: auth}).ServeHTTP(w, r)
+		if w.Code != tt.status || !strings.Contains(w.Body.String(), "connection_failed") || !strings.Contains(w.Body.String(), "连接验证失败") || strings.Contains(w.Body.String(), "secret") {
+			t.Fatalf("unsafe or incorrect validation error: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
 type errorAnalyzer struct{ err error }
 
 func (a errorAnalyzer) Analyze(context.Context, json.RawMessage) (analysis.Result, error) {

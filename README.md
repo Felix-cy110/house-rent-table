@@ -32,11 +32,13 @@ OAuth 的本地回调要求浏览器和 Go 服务运行在同一台机器。当�
 先在 CC Switch 的 Codex 页面启用目标供应商，然后展开本页面的 **API Key / 自定义供应商**，点击 **从 CC Switch 导入并连接**。读取的是 CC Switch 写出的生效配置 `config.toml` 和需要时的 `auth.json`；默认读取 `~/.codex`，也识别 `~/.cc-switch/settings.json` 的 `codexConfigDir`。如果使用自定义目录或仅将目录设置保存在新版 CC Switch 数据库中，请展开 **指定配置目录（可选）**，填写包含这两个文件的绝对目录，也支持 `~/...`。
 
 - 导入当前 `model_provider` 对应的地址、模型和 Key，支持 `auth.json` 的 `OPENAI_API_KEY`、供应商内的 `experimental_bearer_token` 和 `env_key`；环境变量需要在启动 Go 服务前设置。配置使用 `profile` 时按对应档案选择模型和供应商。
-- 本应用保存独立快照，重启应用后仍可使用；CC Switch 中切换供应商后，在本页面点击 **切换连接** 并重新导入。导入不会复制 OAuth token、MCP、命令或其他工具设置，也不会修改源文件。配置无效或新 app server 启动失败时保留原连接；分析进行中不能切换连接。
+- 本应用保存独立快照，重启应用后仍可使用；CC Switch 中切换供应商后，在本页面点击 **切换连接** 并重新导入。导入不会复制 OAuth token、MCP、命令或其他工具设置，也不会修改源文件。配置无效、新 app server 启动失败或模型验证失败时保留原连接；分析或连接验证进行中不能切换连接。
 - 接入的地址应提供 Responses API。若供应商需要格式转换，应先在 CC Switch 开启本地路由后导入，并保持 CC Switch 运行。当前不直接导入额外 `http_headers`、`env_http_headers` 或 `query_params`，这类配置会提示通过本地路由接入。租房完整分析还需要供应商支持流式回复、联网搜索和计算工具调用。
 - 仅有 ChatGPT OAuth 的配置会提示使用本页面的 OAuth 登录，不会转移其登录 token。切回 OAuth 时清除本应用的自定义供应商路由。
 
-可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；页面填写或从 CC Switch 导入的模型优先于 `-codex-model`。未指定模型时使用该 Codex 版本的默认模型。请勿将本应用的 `-codex-home` 指向 CC Switch 的源配置目录。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。连接成功代表本地配置加载完成，额度、网络和模型访问权限仍需由真实分析请求验证。
+可用 `-codex-bin` 指定原生 Codex 可执行文件，`-codex-home` 指定本应用专用配置目录，`-codex-model` 指定账号可用的模型；页面填写或从 CC Switch 导入的模型优先于 `-codex-model`。未指定模型时使用该 Codex 版本的默认模型。请勿将本应用的 `-codex-home` 指向 CC Switch 的源配置目录。Windows 会自动识别标准 npm 安装的原生程序，其他安装布局可显式指定 `codex.exe`。
+
+手动 API Key 连接和 CC Switch 导入会先通过实际使用的 Codex App Server 发送一次简短模型请求，收到有效最终回复且请求正常结束后才保存配置并显示连接成功。验证不包含表格内容，不调用搜索或计算工具，可能产生少量模型费用；模型请求最多等待 30 秒（含进程启动等步骤的登录接口总计最多 60 秒）。Key、地址、模型、权限、额度或网络有问题时会提示错误，失败时保留原连接，可修改配置后重试。OAuth 仍以官方授权完成为登录依据。验证只确认当时的基本模型调用可用，完整分析所需的联网搜索和计算工具能力，以及后续余额、网络变化，仍由分析请求确认。
 
 可用 `-rent-premium-tolerance 20` 调整租金溢价提示的容忍百分比（默认 20，允许 0 至 100）。这是产品提示规则，不是市场或法律标准；只有样本可比且证据充分时才应用。该容忍值不用于首次付款的算术差额。联网分析最多等待 5 分钟，可随时取消。
 
