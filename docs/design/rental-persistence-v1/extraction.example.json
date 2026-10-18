@@ -11,6 +11,7 @@
     "broker_name": "示例中介（虚构）",
     "currency": "CNY",
     "monthly_rent": "2500.00",
+    "lease_months": "12.00",
     "deposit_months": "1.00",
     "prepay_months": "3.00",
     "deposit_amount": null,
@@ -128,6 +129,13 @@
     }
   ],
   "evidence": [
+    {
+      "path": "/rental/lease_months",
+      "source_field_ids": [
+        "field-15"
+      ],
+      "note": null
+    },
     {
       "path": "/rental/community_location",
       "source_field_ids": [

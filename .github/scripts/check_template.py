@@ -68,6 +68,11 @@ def check_template(root):
         elif re.fullmatch(r"B[1-9]\d*", address) and address != "B1":
             require(not value.strip(), f"填写区域应为空白：{address}")
 
+    lease = [row for row, label in labels.items() if label == "租几个月"]
+    rent = [row for row, label in labels.items() if label == "房租多少钱一个月"]
+    require(len(lease) == 1, "模板应包含一项“租几个月”")
+    require(len(rent) == 1 and rent[0] == lease[0] + 1, "租几个月应紧接在房租多少钱一个月上方")
+
     first_month = [row for row, label in labels.items() if label == "首月总共要付多少"]
     monthly = [row for row, label in labels.items() if label == "以后每个月要付多少钱"]
     require(len(first_month) == 1, "模板应包含一项“首月总共要付多少”")
@@ -83,7 +88,7 @@ def check_template(root):
     styles = documents["xl/styles.xml"]
     fonts = styles.findall("s:fonts/s:font", NS)
     cell_styles = styles.findall("s:cellXfs/s:xf", NS)
-    for number in (location[0] + 1, location[0] + 2):
+    for number in (lease[0], location[0] + 1, location[0] + 2):
         row = sheet.find(f"s:sheetData/s:row[@r='{number}']", NS)
         for column, index in (("A", 1), ("B", 2)):
             address = f"{column}{number}"
@@ -95,14 +100,14 @@ def check_template(root):
                 style_id = cell.get("s", style_id)
             font = fonts[int(cell_styles[int(style_id)].get("fontId", "0"))]
             bold = font.find("s:b", NS)
-            require(bold is None or bold.get("val", "1") in ("0", "false"), f"新增两行不应加粗：{address}")
+            require(bold is None or bold.get("val", "1") in ("0", "false"), f"租期、面积和朝向行不应加粗：{address}")
             if cell is not None:
                 text = cell.find("s:is", NS)
                 if cell.get("t") == "s":
                     text = strings.findall("s:si", NS)[int(cell.findtext("s:v", namespaces=NS))]
                 if text is not None:
                     require(all(mark.get("val", "1") in ("0", "false") for mark in text.findall("s:r/s:rPr/s:b", NS)),
-                            f"新增两行的文字不应加粗：{address}")
+                            f"租期、面积和朝向行的文字不应加粗：{address}")
 
     print(f"检查通过：{links[0]}")
 

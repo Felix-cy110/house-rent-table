@@ -34,7 +34,7 @@ MySQL 连接自动使用 utf8mb4、UTC 和严格 SQL 模式。所有时间按 UT
 ## 业务结构
 
 - `rental_extraction_task`：输入快照、版本、模型、提取结果及任务状态。
-- `rental_import_record`：地点、面积/范围、朝向、中介姓名、月租、押付规则和用户报价。
+- `rental_import_record`：地点、面积/范围、朝向、中介姓名、总租期、月租、押付规则和用户报价。
 - `rental_charge`：收费类型、金额/单价/比例、单位、周期、付款时间和来源。
 - `rental_broker_feedback`：坑人记录表，以 `broker_name` 为主键，`feedback_count` 为反馈坑人次数，保存首次及最近反馈时间。
 - `rental_schema_migrations`：迁移版本及校验和。
@@ -42,6 +42,8 @@ MySQL 连接自动使用 utf8mb4、UTC 和严格 SQL 模式。所有时间按 UT
 完整字段说明见 [V1 设计](design/rental-persistence-v1/README.md)。可执行契约位于 `internal/extraction/schema.json`，Go 类型位于 `internal/extraction/types.go`，DDL 位于 `internal/persistence/migrations/001_rental.sql`。设计目录保留可评审副本，测试核对 Schema 一致性。
 
 V2 的 `internal/persistence/migrations/002_broker_feedback.sql` 新增坑人记录表。再次运行 `go run ./cmd/migrate` 会按顺序核对已执行版本的校验和，再执行尚未应用的迁移；V1 的 SQL 和已有业务数据保持原样，重复运行不会清空或重复建表。升级后重启服务。
+
+V3 的 `internal/persistence/migrations/003_lease_months.sql` 在房源记录中新增 `lease_months DECIMAL(6,2) NULL`，用于“租几个月”的总租期，支持半个月且必须为正；与押金月数、每次预付月数独立。历史记录保持 NULL，不回填猜测值。升级时执行 `go run ./cmd/migrate` 后重启服务；迁移可重复执行，也可恢复已完成 DDL 但尚未写入迁移版本的情况。新提取 Schema 要求显式返回租期或 null，后端仍兼容缺少此键的旧 V1 提取结果，已有入库重试可继续。
 
 用户点击分析结果下的“坑人”时，前端从本次原始表格的“中介姓名”字段取值，调用 `POST /api/broker-feedback`，无需等待后台提取。后端去除姓名首尾空白并校验非空、最多 256 字符，使用区分字符的唯一主键和 `INSERT ... ON DUPLICATE KEY UPDATE feedback_count=feedback_count+1` 实现首次记 1、再次加 1。同名合并累计，不额外按用户或文件去重；不同姓名独立计数。每次提交在同一事务内累加并读取次数，提交成功后才回复页面；并发反馈不会丢失计数。
 
@@ -79,7 +81,7 @@ go vet ./...
 npm --prefix web run test:e2e
 ```
 
-真实数据库测试仅针对可丢弃的独立测试库，会创建临时触发器以验证事务回滚：
+真实数据库测试仅针对可丢弃的独立测试库，会创建临时触发器以验证事务回滚，还会在租期升级用例中删除测试表的租期列及约束以模拟 V2：
 
 ```powershell
 $env:RENT_TEST_MYSQL_DSN = '测试账号:密码@tcp(127.0.0.1:3306)/rental_test'
@@ -93,10 +95,12 @@ $env:RENT_CODEX_SMOKE = '1'
 go test ./internal/codex -run TestInstalledCodexExtractionSchema -count=1
 ```
 
-本轮已通过全部 Go 测试、go vet、前端构建、21 项 Playwright 测试和模板检查。隔离 MySQL 9.1 测试通过迁移重放、并发幂等、事务回滚、长元数据和精确小数验证；真实 Codex CLI 对接本地模拟 Responses 服务的测试也已通过。
+初版持久化实现已通过全部 Go 测试、go vet、前端构建、21 项 Playwright 测试和模板检查。隔离 MySQL 9.1 测试通过迁移重放、并发幂等、事务回滚、长元数据和精确小数验证；真实 Codex CLI 对接本地模拟 Responses 服务的测试也已通过。
 
 持久化实现的远端 CI 已通过 MySQL 8.4 集成测试和 Go race 检查；本机 CGO 关闭且未安装可用 C 编译器，未在本机执行 race 检查。
 
 补充 `.env` 加载后，全量 Go 测试、go vet、前端构建和 3 项持久化页面测试通过；新增用例覆盖环境变量优先、空值覆盖、Windows BOM、带特殊字符的单引号值、解析错误脱敏，以及数据库凭据不传给 Codex 子进程。本机通过 `.env` 验证连接并完成了项目库的 V1 迁移。
+
+2026-10-18 新增总租期后，模板检查、全量 Go 测试、go vet、前端构建和独立 PR 分支的 27 项 Playwright 测试通过。隔离 MySQL 9.1 的全部持久化测试通过，新增用例验证 V2 升至 V3、历史记录租期保持 NULL、12 个月与半个月独立于押付月数保存、零租期被拒绝，以及 DDL 完成但未记版本时的迁移重放；测试库已清理。本机 `.env` 对应项目库已执行 V3 迁移，真实 Codex CLI 对接本地模拟 Responses 服务的提取 Schema 测试也已通过。
 
 自定义供应商是否真正遵守结构化输出，仍需在对应提供方环境验证；服务端始终执行独立校验，不依赖供应商声明。本轮未调用真实模型供应商。

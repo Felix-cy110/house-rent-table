@@ -3,6 +3,8 @@ package persistence
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -95,6 +97,10 @@ func TestMySQLTransactionsIdempotencyAndExactDecimals(t *testing.T) {
 		t.Fatalf("duplicate rows: %d/%d", records, charges)
 	}
 	var rate string
+	var lease, prepay string
+	if err = store.db.QueryRowContext(ctx, "SELECT CAST(lease_months AS CHAR),CAST(prepay_months AS CHAR) FROM rental_import_record WHERE task_id=?", id).Scan(&lease, &prepay); err != nil || lease != "12.00" || prepay != "3.00" {
+		t.Fatalf("lease/payment period changed: %s/%s %v", lease, prepay, err)
+	}
 	var included, free any
 	if err = store.db.QueryRowContext(ctx, "SELECT CAST(c.unit_price AS CHAR) FROM rental_charge c JOIN rental_import_record r ON r.id=c.record_id WHERE r.task_id=? AND c.charge_type='ELECTRICITY'", id).Scan(&rate); err != nil || rate != "0.623000" {
 		t.Fatalf("decimal changed: %s %v", rate, err)
@@ -145,5 +151,90 @@ func TestMySQLTransactionsIdempotencyAndExactDecimals(t *testing.T) {
 	}
 	if err = store.Complete(ctx, failed, result); err != nil {
 		t.Fatal("transaction recovery", err)
+	}
+}
+
+func TestMySQLLeaseMonthsUpgradeAndReplay(t *testing.T) {
+	dsn := os.Getenv("RENT_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("set RENT_TEST_MYSQL_DSN to a disposable MySQL database")
+	}
+	store, err := OpenMySQL(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	input, raw := example(t)
+	result, err := extraction.Decode(raw, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := OpenQueue(t.TempDir() + "/tasks.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	id, err := q.Enqueue(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _ := q.Get(id)
+	task.Result = raw
+	if err := store.Complete(ctx, task, result); err != nil {
+		t.Fatal(err)
+	}
+	// Only the explicitly disposable integration database is rewound to V2.
+	if _, err := store.db.ExecContext(ctx, "ALTER TABLE rental_import_record DROP CHECK chk_record_lease_months, DROP COLUMN lease_months"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.ExecContext(ctx, "DELETE FROM rental_schema_migrations WHERE version=3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CheckMigration(ctx); err == nil {
+		t.Fatal("unmigrated database accepted")
+	}
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal("upgrade from V2", err)
+	}
+	var duration sql.NullString
+	if err := store.db.QueryRowContext(ctx, "SELECT lease_months FROM rental_import_record WHERE task_id=?", id).Scan(&duration); err != nil || duration.Valid {
+		t.Fatalf("old row must keep an unknown lease duration: %+v %v", duration, err)
+	}
+	halfMonth := extraction.DecimalString("0.50")
+	result.Rental.LeaseMonths = &halfMonth
+	halfMonthSource := "半个月"
+	input.Document.Fields[0].Value = &halfMonthSource
+	secondID, err := q.Enqueue(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _ := q.Get(secondID)
+	second.Result, err = json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(ctx, second, result); err != nil {
+		t.Fatal("persist fractional duration", err)
+	}
+	// Simulate interruption after DDL but before recording its checksum.
+	if _, err := store.db.ExecContext(ctx, "DELETE FROM rental_schema_migrations WHERE version=3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Migrate(ctx); err != nil {
+		t.Fatal("replay completed DDL", err)
+	}
+	if err := store.CheckMigration(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.QueryRowContext(ctx, "SELECT CAST(lease_months AS CHAR) FROM rental_import_record WHERE task_id=?", secondID).Scan(&duration); err != nil || !duration.Valid || duration.String != "0.50" {
+		t.Fatalf("replay changed fractional duration: %+v %v", duration, err)
+	}
+	if _, err := store.db.ExecContext(ctx, "UPDATE rental_import_record SET lease_months=0 WHERE task_id=?", secondID); err == nil {
+		t.Fatal("database accepted zero lease duration")
 	}
 }

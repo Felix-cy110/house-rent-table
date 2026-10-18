@@ -1,14 +1,14 @@
 # 租房业务数据持久化 V1
 
-日期：2026-10-15。状态：V1 字段契约已实现。运行配置、故障处理及验证方式见 [持久化说明](../../persistence.md)。本目录保留设计与示例，可执行版本位于 internal/extraction 和 internal/persistence。
+初版日期：2026-10-15；更新日期：2026-10-18。状态：V1 字段契约及总租期增量已实现。运行配置、故障处理及验证方式见 [持久化说明](../../persistence.md)。本目录保留设计与示例，可执行版本位于 internal/extraction 和 internal/persistence。
 
 用户点击 AI 分析，后端校验本次输入后产生独立提取任务。一次任务对应一次业务快照；同一房源再次分析产生新快照，后台重试沿用同一个任务 ID。业务数据来自填写内容，不使用联网估价替换报价，也不把 AI 核算结果覆盖到用户填写的总额。
 
 本目录文件：
 
-- `schema.sql`：MySQL 8.4 的三张表及约束，与可执行迁移保持一致。
+- `schema.sql`：MySQL 8.4 的 V1 初始三张表及约束，与 `001_rental.sql` 保持一致；后续字段通过增量迁移升级。
 - `extraction.schema.json`：AI 输出对象的 JSON Schema，所有对象禁止额外键，规定的键必须出现，未知标量显式为 null。该文件使用通用 Draft 2020-12；模型调用适配层需要验证当前提供方所支持的子集，不承诺直接传入任意供应商即可使用。
-- `input.example.json`：虚构的 14 项模板输入和固定提取上下文，与输出示例成对对应。
+- `input.example.json`：虚构的 15 项模板输入和固定提取上下文，与输出示例成对对应。
 - `extraction.example.json`：完全虚构的提取结果示例，含面积范围、比例中介费、单价、免费、已含和未知费用。
 - `types.go.txt`：与 JSON 一一对应的 Go DTO 参考；应用使用 internal/extraction/types.go。
 
@@ -24,10 +24,11 @@ rental_extraction_task（提取任务）
 
 任务表的 JSON 用于原文溯源和重试；常用房源属性在业务表中直接查询，费用通过明细表查询。`structured_result` 中的元数据和业务列必须来自同一份通过验证的结果，不能分别编辑。
 
-## 二、模板 14 个字段的落点
+## 二、模板 15 个字段的落点
 
 | Excel 字段 | 业务落点 |
 | --- | --- |
+| 租几个月 | `rental.lease_months`，总租期，与押付月数独立 |
 | 房租多少钱一个月 | `rental.monthly_rent`、`currency` |
 | 押几付几 | `deposit_months`、`prepay_months`、明确写出的 `deposit_amount` |
 | 中介费多少 | `charges[]`，`charge_type = AGENCY` |
@@ -63,6 +64,7 @@ rental_extraction_task（提取任务）
 | `broker_name` | VARCHAR(256) | *string | 中介姓名；联系号码等额外信息保留输入原文 |
 | `currency` | CHAR(3) | *string | 主表各金额的共同币种，例如 CNY；不做汇率换算 |
 | `monthly_rent` | DECIMAL(14,2) | *DecimalString | 明确的每月租金 |
+| `lease_months` | DECIMAL(6,2) | *DecimalString | 明确的总租期（月），必须大于 0；未知为 null |
 | `deposit_months` | DECIMAL(6,2) | *DecimalString | 押金对应的月租月数；允许 0、0.5 等 |
 | `prepay_months` | DECIMAL(6,2) | *DecimalString | 每次预付租金覆盖的月数，必须大于 0 |
 | `deposit_amount` | DECIMAL(14,2) | *DecimalString | 原文明确写出的押金金额；不凭月租乘押金月数补填 |
@@ -180,3 +182,5 @@ Schema 和业务规则可以阻止格式错误及已知口径冲突，但不能�
 模板字段、数据库列、JSON Schema、Go DTO、业务校验、本地队列、独立 AI 会话、迁移与 MySQL 仓储均已实现。本机以隔离 MySQL 9.1 验证了迁移、事务回滚、并发幂等和精确小数，以真实 Codex + 本地模拟供应商验证了 outputSchema 传递；CI 增加 MySQL 8.4 测试配置，尚未在本轮本机执行该版本。未调用真实模型供应商，实际供应商的兼容性和自然语言提取质量仍需真实环境验收。
 
 自动化测试覆盖契约反例、来源覆盖、业务字段组合、队列重启恢复、数据库故障补写、失败任务留档及主报告隔离。真实数据库测试验证了迁移重放、并发幂等、事务回滚、精确小数及长元数据完整保存；页面测试覆盖保存成功、后台入队失败及报告失败后继续保存。具体命令见持久化说明。
+
+租期字段通过 `internal/persistence/migrations/003_lease_months.sql` 增量添加；本目录 `schema.sql` 保留原始 V1 DDL。历史记录和未含租期的旧提取结果按 null 处理，不从押付规则推断。新提取规则版本为 `rental-extraction-v1.1.0`。

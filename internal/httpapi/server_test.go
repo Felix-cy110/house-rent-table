@@ -162,10 +162,10 @@ func TestTemplateDownload(t *testing.T) {
 	}
 	defer workbook.Close()
 	value := "3150元/月，含物业费\n水电按实际用量另付"
-	if err := workbook.SetCellValue("Sheet1", "B11", value); err != nil {
+	if err := workbook.SetCellValue("Sheet1", "B12", value); err != nil {
 		t.Fatal(err)
 	}
-	for cell, value := range map[string]any{"B13": 28.5, "B14": "南北通透", "B15": "测试中介"} {
+	for cell, value := range map[string]any{"B2": "  12个月（固定租期）  ", "B14": 28.5, "B15": "南北通透", "B16": "测试中介"} {
 		if err := workbook.SetCellValue("Sheet1", cell, value); err != nil {
 			t.Fatal(err)
 		}
@@ -183,24 +183,28 @@ func TestTemplateDownload(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &imported); err != nil {
 		t.Fatal(err)
 	}
-	if len(imported.Document.Fields) != 14 {
+	if len(imported.Document.Fields) != 15 {
 		t.Fatalf("downloaded template field count: %d", len(imported.Document.Fields))
 	}
-	monthly := imported.Document.Fields[9]
-	if !imported.Document.Fields[8].Bold || monthly.Bold {
+	lease := imported.Document.Fields[0]
+	if lease.Label != "租几个月" || lease.Cell != "B2" || lease.Sheet != "Sheet1" || lease.Bold || lease.Value == nil || *lease.Value != "  12个月（固定租期）  " {
+		t.Fatalf("lease duration or source changed: %+v", lease)
+	}
+	monthly := imported.Document.Fields[10]
+	if !imported.Document.Fields[9].Bold || monthly.Bold {
 		t.Fatal("downloaded template's bold target was lost during import")
 	}
-	if imported.Document.Fields[8].Label != "首月总共要付多少" || monthly.Label != "以后每个月要付多少钱" ||
-		monthly.Value == nil || *monthly.Value != value || monthly.Sheet != "Sheet1" || monthly.Cell != "B11" ||
-		imported.Document.Fields[10].Label != "小区地点" || imported.Document.Fields[10].Cell != "B12" {
+	if imported.Document.Fields[9].Label != "首月总共要付多少" || monthly.Label != "以后每个月要付多少钱" ||
+		monthly.Value == nil || *monthly.Value != value || monthly.Sheet != "Sheet1" || monthly.Cell != "B12" ||
+		imported.Document.Fields[11].Label != "小区地点" || imported.Document.Fields[11].Cell != "B13" {
 		t.Fatalf("monthly payment or adjacent fields changed: %+v", imported.Document.Fields)
 	}
 	for offset, want := range []struct{ label, value, cell string }{
-		{"房间大小/平方", "28.5", "B13"},
-		{"朝向", "南北通透", "B14"},
-		{"中介姓名", "测试中介", "B15"},
+		{"房间大小/平方", "28.5", "B14"},
+		{"朝向", "南北通透", "B15"},
+		{"中介姓名", "测试中介", "B16"},
 	} {
-		field := imported.Document.Fields[11+offset]
+		field := imported.Document.Fields[12+offset]
 		if field.Label != want.label || field.Value == nil || *field.Value != want.value ||
 			field.Cell != want.cell || field.Sheet != "Sheet1" || field.Bold {
 			t.Fatalf("room detail or following agent changed: %+v", field)

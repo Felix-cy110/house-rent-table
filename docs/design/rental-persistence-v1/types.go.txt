@@ -38,6 +38,7 @@ type Rental struct {
 	BrokerName            *string        `json:"broker_name"`
 	Currency              *string        `json:"currency"`
 	MonthlyRent           *DecimalString `json:"monthly_rent"`
+	LeaseMonths           *DecimalString `json:"lease_months"`
 	DepositMonths         *DecimalString `json:"deposit_months"`
 	PrepayMonths          *DecimalString `json:"prepay_months"`
 	DepositAmount         *DecimalString `json:"deposit_amount"`
