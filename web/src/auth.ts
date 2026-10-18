@@ -11,7 +11,7 @@ export function setupAuth(container: HTMLElement) {
           <label for="api-base-url">API 地址 <span class="quiet">（留空使用 OpenAI）</span></label><input id="api-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off" maxlength="2048" />
           <label for="api-model">模型 <span class="quiet">（自定义地址必填）</span></label><input id="api-model" type="text" placeholder="填写供应商支持的模型名称" autocomplete="off" maxlength="256" />
           <label for="api-key">API Key</label><input id="api-key" type="password" placeholder="API Key" autocomplete="off" required maxlength="8192" />
-          <button id="key-connect" class="choose-file" type="submit">连接</button>
+          <button id="key-connect" class="choose-file" type="submit">连接Enter</button>
         </form>
         <p class="quiet">连接时会发送一次简短模型请求验证配置，可能产生少量费用。</p>
         <div class="ccswitch-import">
