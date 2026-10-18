@@ -22,6 +22,15 @@ type ConfigError struct{ Message string }
 
 func (e *ConfigError) Error() string { return e.Message }
 
+// ConnectionError reports a failed model probe using only locally authored text.
+type ConnectionError struct {
+	Message string
+	Cause   error
+}
+
+func (e *ConnectionError) Error() string { return e.Message }
+func (e *ConnectionError) Unwrap() error { return e.Cause }
+
 func (r *LoginRequest) Validate() error {
 	r.APIKey = strings.TrimSpace(r.APIKey)
 	r.BaseURL = strings.TrimRight(strings.TrimSpace(r.BaseURL), "/")

@@ -146,6 +146,12 @@ func (s *Service) replaceProvider(ctx context.Context, provider *providerConfig)
 	if err != nil {
 		return nil, err
 	}
+	if provider != nil {
+		if err := s.probeConnection(ctx, c); err != nil {
+			c.close()
+			return nil, err
+		}
+	}
 	if err := saveProvider(home, provider); err != nil {
 		c.close()
 		return nil, err
@@ -192,7 +198,7 @@ func (s *Service) notification(m message) {
 			}
 		}
 	}
-	if s.events == nil || (m.Method != "item/completed" && m.Method != "turn/completed") {
+	if s.events == nil || (m.Method != "item/completed" && m.Method != "turn/completed" && m.Method != "error") {
 		return
 	}
 	var event struct {
@@ -208,7 +214,7 @@ func (s *Service) notification(m message) {
 	if m.Method == "item/completed" && (event.Item.Type != "agentMessage" || event.Item.Phase == "commentary") {
 		return
 	}
-	// Only complete items and terminal events are queued, not token deltas.
+	// Only complete items, errors and terminal events are queued, not token deltas.
 	select {
 	case s.events <- m:
 	default:
@@ -305,6 +311,12 @@ func (s *Service) Login(ctx context.Context, input analysis.LoginRequest) (analy
 			return analysis.Login{}, err
 		}
 		return analysis.Login{Type: "apiKey"}, nil
+	}
+	if input.Type == "apiKey" {
+		// Probe without overwriting the active client's Codex-managed credentials.
+		if err := s.probeOpenAIKey(ctx, input.APIKey); err != nil {
+			return analysis.Login{}, err
+		}
 	}
 	c, err := s.connection(ctx)
 	var configError *analysis.ConfigError
