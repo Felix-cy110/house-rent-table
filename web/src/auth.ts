@@ -11,7 +11,7 @@ export function setupAuth(container: HTMLElement) {
           <label for="api-base-url">API 地址 <span class="quiet">（留空使用 OpenAI）</span></label><input id="api-base-url" type="url" placeholder="https://api.example.com/v1" autocomplete="off" maxlength="2048" />
           <label for="api-model">模型 <span class="quiet">（自定义地址必填）</span></label><input id="api-model" type="text" placeholder="填写供应商支持的模型名称" autocomplete="off" maxlength="256" />
           <label for="api-key">API Key</label><input id="api-key" type="password" placeholder="API Key" autocomplete="off" required maxlength="8192" />
-          <button id="key-connect" class="choose-file" type="submit">连接</button>
+          <button id="key-connect" class="choose-file" type="submit">连接Enter</button>
         </form>
         <p class="quiet">连接时会发送一次简短模型请求验证配置，可能产生少量费用。</p>
         <div class="ccswitch-import">
@@ -24,10 +24,10 @@ export function setupAuth(container: HTMLElement) {
     <p id="oauth-pending" class="message" hidden>请在授权页面完成登录。<a id="oauth-link" target="_blank" rel="noopener noreferrer" hidden>打开授权页面 ↗</a></p>
     <button id="logout-button" class="text-button" type="button" hidden>退出登录 / 取消授权</button>
     <p id="auth-error" class="message error" role="alert" hidden></p>
-    <dialog id="connection-success" class="connection-success" aria-labelledby="connection-success-title" aria-describedby="connection-success-message">
-      <span class="connection-success-icon" aria-hidden="true">✓</span>
-      <h2 id="connection-success-title">连接成功</h2>
-      <p id="connection-success-message"></p>
+    <dialog id="connection-result" class="connection-result" aria-labelledby="connection-result-title" aria-describedby="connection-result-message">
+      <span id="connection-result-icon" class="connection-result-icon" aria-hidden="true"></span>
+      <h2 id="connection-result-title"></h2>
+      <p id="connection-result-message"></p>
       <form method="dialog"><button class="primary-button" type="submit" autofocus>知道了</button></form>
     </dialog>
   `;
@@ -37,14 +37,20 @@ export function setupAuth(container: HTMLElement) {
   let busy = false;
   let editing = false;
   let connectionSuccessMessage: string | undefined;
-  function showConnectionSuccess(message: string) {
-    el('connection-success-message').textContent = message;
-    el<HTMLDialogElement>('connection-success').showModal();
+  let connectionTrigger: HTMLButtonElement | undefined;
+  function showConnectionResult(status: 'success' | 'error', message: string) {
+    const dialog = el<HTMLDialogElement>('connection-result');
+    dialog.dataset.status = status;
+    el('connection-result-icon').textContent = status === 'success' ? '✓' : '!';
+    el('connection-result-title').textContent = status === 'success' ? '连接成功' : '连接失败';
+    el('connection-result-message').textContent = message;
+    if (!dialog.open) dialog.showModal();
   }
   function errorMessage(error: unknown) {
     const node = el('auth-error');
     node.textContent = error instanceof APIError ? error.message : '无法连接服务，请稍后重试。';
     node.hidden = false;
+    return node.textContent;
   }
   function disable(disabled: boolean) {
     busy = disabled;
@@ -72,12 +78,17 @@ export function setupAuth(container: HTMLElement) {
       else if (connectionSuccessMessage) {
         const message = connectionSuccessMessage;
         connectionSuccessMessage = undefined;
-        if (info.loggedIn && !info.error) showConnectionSuccess(message);
+        if (info.loggedIn && !info.error) showConnectionResult('success', message);
+        else showConnectionResult('error', info.error || '未能确认连接成功，请检查配置后重试。');
       }
     } catch (error) {
       if (version !== epoch) return;
       el('account-status').textContent = '未连接';
-      errorMessage(error);
+      const message = errorMessage(error);
+      if (connectionSuccessMessage) {
+        connectionSuccessMessage = undefined;
+        showConnectionResult('error', message);
+      }
     }
   }
   async function signIn(connection: CodexConnection) {
@@ -89,6 +100,7 @@ export function setupAuth(container: HTMLElement) {
     el('auth-error').hidden = true;
     const previousStatus = el('account-status').textContent;
     const button = el<HTMLButtonElement>(connection.type === 'apiKey' ? (connection.source === 'ccswitch' ? 'ccswitch-import' : 'key-connect') : 'oauth-login');
+    connectionTrigger = button;
     const previousButtonText = button.textContent;
     if (connection.type === 'apiKey') button.textContent = '正在验证连接…';
     if (connection.type === 'apiKey') el('account-status').textContent = '正在验证连接…';
@@ -109,8 +121,9 @@ export function setupAuth(container: HTMLElement) {
       editing = false;
       await refresh();
     } catch (error) {
+      connectionSuccessMessage = undefined;
       el('account-status').textContent = previousStatus;
-      errorMessage(error);
+      showConnectionResult('error', errorMessage(error));
     }
     finally { input.value = ''; button.textContent = previousButtonText; disable(false); }
   }
@@ -125,7 +138,10 @@ export function setupAuth(container: HTMLElement) {
   el('ccswitch-import').addEventListener('click', () => { void signIn({ type: 'apiKey', source: 'ccswitch', configDir: el<HTMLInputElement>('ccswitch-dir').value.trim() || undefined }); });
   el('connection-edit').addEventListener('click', () => { editing = !editing; void refresh(); });
   el('account-refresh').addEventListener('click', () => { epoch++; void refresh(); });
-  el('connection-success').addEventListener('close', () => { el('account-refresh').focus(); });
+  el('connection-result').addEventListener('close', () => {
+    if (el('connection-result').dataset.status === 'error' && connectionTrigger?.getClientRects().length) connectionTrigger.focus();
+    else el('account-refresh').focus();
+  });
   el('logout-button').addEventListener('click', async () => {
     if (busy) return;
     epoch++;

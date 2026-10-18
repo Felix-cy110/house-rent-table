@@ -21,6 +21,7 @@ for (const source of ['manual', 'ccswitch'] as const) {
     await page.getByText('API Key / 自定义供应商', { exact: true }).click();
     const button = page.locator(source === 'manual' ? '#key-connect' : '#ccswitch-import');
     const successDialog = page.getByRole('dialog', { name: '连接成功', exact: true });
+    const failureDialog = page.getByRole('dialog', { name: '连接失败', exact: true });
     if (source === 'manual') {
       await page.getByLabel('API 地址').fill('https://gateway.example/v1');
       await page.getByLabel('模型', { exact: false }).fill('chosen-model');
@@ -36,10 +37,20 @@ for (const source of ['manual', 'ccswitch'] as const) {
     await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
     finishProbe(false);
     await expect(page.locator('#auth-error')).toContainText('API Key 无效');
+    await expect(failureDialog).toBeVisible();
+    await expect(failureDialog).toContainText('API Key 无效或已过期');
+    await expect(failureDialog.getByRole('button', { name: '知道了', exact: true })).toBeFocused();
     await expect(successDialog).toBeHidden();
     await expect(page.locator('#account-status')).toHaveText('已连接 · API Key · 原供应商');
     await expect(button).toBeEnabled();
     await expect(page.locator('#key-details')).toHaveAttribute('open', '');
+    await failureDialog.getByRole('button', { name: '知道了', exact: true }).click();
+    await expect(failureDialog).toBeHidden();
+    await expect(button).toBeFocused();
+    if (source === 'manual') {
+      await expect(page.getByLabel('API 地址')).toHaveValue('https://gateway.example/v1');
+      await expect(page.getByLabel('模型', { exact: false })).toHaveValue('chosen-model');
+    }
     if (source === 'manual') await page.getByLabel('API Key', { exact: true }).fill('correct-test-secret');
     await button.click();
     await expect.poll(() => attempts).toBe(2);
@@ -70,12 +81,18 @@ test('首次连接验证失败时保持未登录并显示错误', async ({ page 
   await expect(page.locator('#account-status')).toHaveText('未登录');
   await page.getByText('API Key / 自定义供应商', { exact: true }).click();
   await page.getByLabel('API Key', { exact: true }).fill('test-only-wrong-key');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   await expect(page.locator('#auth-error')).toContainText('连接验证超时');
+  const failureDialog = page.getByRole('dialog', { name: '连接失败', exact: true });
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('连接验证超时');
   await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeHidden();
   await expect(page.locator('#account-status')).toHaveText('未登录');
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
-  await expect(page.getByRole('button', { name: '连接', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '连接Enter', exact: true })).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(failureDialog).toBeHidden();
+  await expect(page.getByRole('button', { name: '连接Enter', exact: true })).toBeFocused();
 });
 
 test('自定义供应商提交地址和模型，密钥不留在页面或存储中', async ({ page }) => {
@@ -91,7 +108,7 @@ test('自定义供应商提交地址和模型，密钥不留在页面或存储�
   await page.getByLabel('API 地址').fill('https://gateway.example/v1');
   await page.getByLabel('模型', { exact: false }).fill('chosen-model');
   await page.getByLabel('API Key', { exact: true }).fill('custom-test-secret');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   expect(submitted).toEqual({ type: 'apiKey', apiKey: 'custom-test-secret', baseUrl: 'https://gateway.example/v1', model: 'chosen-model' });
   await expect(page.locator('#account-status')).toContainText('测试供应商 · chosen-model');
   await expect(page.locator('#api-key')).toHaveValue('');
@@ -118,7 +135,12 @@ test('CC Switch 导入复用 API Key，失败后保留原状态并允许重试',
   await page.getByLabel('Codex 配置目录', { exact: true }).fill('C:/example/.codex');
   await page.getByRole('button', { name: '从 CC Switch 导入并连接', exact: true }).click();
   await expect(page.locator('#auth-error')).toContainText('未找到');
+  const failureDialog = page.getByRole('dialog', { name: '连接失败', exact: true });
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('未找到可读取的 Codex 配置');
   await expect(page.locator('#account-status')).toHaveText('已连接 · ChatGPT');
+  await failureDialog.getByRole('button', { name: '知道了', exact: true }).click();
+  await expect(page.getByLabel('Codex 配置目录', { exact: true })).toHaveValue('C:/example/.codex');
   await page.getByRole('button', { name: '从 CC Switch 导入并连接', exact: true }).click();
   await expect(page.locator('#account-status')).toHaveText('已连接 · API Key · 本地路由 · imported-model · 来自 CC Switch');
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
@@ -136,7 +158,7 @@ test('API Key 只提交到登录接口，输入和浏览器存储不保留密钥
   await page.goto('/');
   await page.getByText('API Key / 自定义供应商', { exact: true }).click();
   await page.getByLabel('API Key', { exact: true }).fill('test-only-not-real');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   await expect(page.getByText('已连接 · API Key', { exact: true })).toBeVisible();
   expect(submitted).toEqual({ type: 'apiKey', apiKey: 'test-only-not-real' });
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
@@ -183,7 +205,15 @@ test('OAuth 失败可重试，取消授权能恢复未登录状态', async ({ pa
   await expect(page.locator('#account-status')).toHaveText('等待授权');
   pending = false; error = '登录未完成，请重新登录。';
   await expect(page.locator('#auth-error')).toContainText('登录未完成');
+  const failureDialog = page.getByRole('dialog', { name: '连接失败', exact: true });
+  await expect(failureDialog).toBeVisible();
+  await expect(failureDialog).toContainText('登录未完成');
   await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeHidden();
+  await failureDialog.getByRole('button', { name: '知道了', exact: true }).click();
+  const refreshed = page.waitForResponse('**/api/codex/account');
+  await page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await refreshed;
+  await expect(failureDialog).toBeHidden();
   await page.getByRole('button', { name: 'OAuth 登录（ChatGPT）' }).click();
   await expect(page.locator('#account-status')).toHaveText('等待授权');
   await page.getByRole('button', { name: '退出登录 / 取消授权' }).click();
