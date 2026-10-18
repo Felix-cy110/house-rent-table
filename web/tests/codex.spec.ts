@@ -81,7 +81,7 @@ test('首次连接验证失败时保持未登录并显示错误', async ({ page 
   await expect(page.locator('#account-status')).toHaveText('未登录');
   await page.getByText('API Key / 自定义供应商', { exact: true }).click();
   await page.getByLabel('API Key', { exact: true }).fill('test-only-wrong-key');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   await expect(page.locator('#auth-error')).toContainText('连接验证超时');
   const failureDialog = page.getByRole('dialog', { name: '连接失败', exact: true });
   await expect(failureDialog).toBeVisible();
@@ -89,10 +89,10 @@ test('首次连接验证失败时保持未登录并显示错误', async ({ page 
   await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeHidden();
   await expect(page.locator('#account-status')).toHaveText('未登录');
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
-  await expect(page.getByRole('button', { name: '连接', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '连接Enter', exact: true })).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(failureDialog).toBeHidden();
-  await expect(page.getByRole('button', { name: '连接', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: '连接Enter', exact: true })).toBeFocused();
 });
 
 test('自定义供应商提交地址和模型，密钥不留在页面或存储中', async ({ page }) => {
@@ -108,7 +108,7 @@ test('自定义供应商提交地址和模型，密钥不留在页面或存储�
   await page.getByLabel('API 地址').fill('https://gateway.example/v1');
   await page.getByLabel('模型', { exact: false }).fill('chosen-model');
   await page.getByLabel('API Key', { exact: true }).fill('custom-test-secret');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   expect(submitted).toEqual({ type: 'apiKey', apiKey: 'custom-test-secret', baseUrl: 'https://gateway.example/v1', model: 'chosen-model' });
   await expect(page.locator('#account-status')).toContainText('测试供应商 · chosen-model');
   await expect(page.locator('#api-key')).toHaveValue('');
@@ -158,7 +158,7 @@ test('API Key 只提交到登录接口，输入和浏览器存储不保留密钥
   await page.goto('/');
   await page.getByText('API Key / 自定义供应商', { exact: true }).click();
   await page.getByLabel('API Key', { exact: true }).fill('test-only-not-real');
-  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '连接Enter', exact: true }).click();
   await expect(page.getByText('已连接 · API Key', { exact: true })).toBeVisible();
   expect(submitted).toEqual({ type: 'apiKey', apiKey: 'test-only-not-real' });
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
