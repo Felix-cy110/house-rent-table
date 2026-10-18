@@ -222,7 +222,7 @@ func TestRepositoryTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedLabels := []string{
-		"房租多少钱一个月", "押几付几", "中介费多少", "水费", "电费", "保洁费",
+		"租几个月", "房租多少钱一个月", "押几付几", "中介费多少", "水费", "电费", "保洁费",
 		"物业费多少", "燃气费", "首月总共要付多少", "以后每个月要付多少钱", "小区地点", "房间大小/平方", "朝向", "中介姓名",
 	}
 	if len(result.Document.Fields) != len(expectedLabels) {
@@ -239,7 +239,7 @@ func TestRepositoryTemplate(t *testing.T) {
 		if field.Value != nil {
 			t.Fatal("public template must remain blank")
 		}
-		if field.Bold != (field.Cell == "B10") {
+		if field.Bold != (field.Cell == "B11") {
 			t.Fatalf("template must mark only the first-payment label for calculation: %+v", field)
 		}
 	}
@@ -264,6 +264,33 @@ func TestRepositoryTemplate(t *testing.T) {
 	}
 	defer workbook.Close()
 	location := result.Document.Fields[locationIndex]
+	for _, value := range []any{nil, 0, 0.5, "  12个月（固定租期）  "} {
+		if err := workbook.SetCellValue("Sheet1", "B2", value); err != nil {
+			t.Fatal(err)
+		}
+		buffer, err := workbook.WriteToBuffer()
+		if err != nil {
+			t.Fatal(err)
+		}
+		filled, err := Parse(context.Background(), buffer, "租期.xlsx")
+		if err != nil {
+			t.Fatal(err)
+		}
+		lease := filled.Document.Fields[0]
+		var want *string
+		switch value := value.(type) {
+		case int:
+			want = stringPointer("0")
+		case float64:
+			want = stringPointer("0.5")
+		case string:
+			want = &value
+		}
+		if lease.Label != "租几个月" || lease.Cell != "B2" || lease.Sheet != "Sheet1" || lease.Bold ||
+			(lease.Value == nil) != (want == nil) || (want != nil && *lease.Value != *want) {
+			t.Fatalf("lease duration or source changed: %+v", lease)
+		}
+	}
 	if err := workbook.SetCellValue(location.Sheet, location.Cell, "测试小区 2 栋"); err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +306,7 @@ func TestRepositoryTemplate(t *testing.T) {
 	if got.Label != location.Label || got.Cell != location.Cell || got.Sheet != location.Sheet || got.Value == nil || *got.Value != "测试小区 2 栋" {
 		t.Fatalf("location value or source changed: %+v", got)
 	}
-	monthly := result.Document.Fields[9]
+	monthly := result.Document.Fields[10]
 	for _, tt := range []struct {
 		name  string
 		value any
@@ -302,7 +329,7 @@ func TestRepositoryTemplate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := filled.Document.Fields[9]
+			got := filled.Document.Fields[10]
 			if got.ID != monthly.ID || got.Label != monthly.Label || got.Cell != monthly.Cell || got.Sheet != monthly.Sheet {
 				t.Fatalf("monthly payment source changed: %+v", got)
 			}
@@ -314,7 +341,7 @@ func TestRepositoryTemplate(t *testing.T) {
 			}
 		})
 	}
-	if err := workbook.SetCellValue("Sheet1", "B15", "测试中介"); err != nil {
+	if err := workbook.SetCellValue("Sheet1", "B16", "测试中介"); err != nil {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
@@ -330,7 +357,7 @@ func TestRepositoryTemplate(t *testing.T) {
 		{"room details original text", "  约28.5平方米（房间使用面积）  ", "  朝南\n窗户向东  ", stringPointer("  约28.5平方米（房间使用面积）  "), stringPointer("  朝南\n窗户向东  ")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			for cell, value := range map[string]any{"B13": tt.area, "B14": tt.orientation} {
+			for cell, value := range map[string]any{"B14": tt.area, "B15": tt.orientation} {
 				if err := workbook.SetCellValue("Sheet1", cell, value); err != nil {
 					t.Fatal(err)
 				}
@@ -356,7 +383,7 @@ func TestRepositoryTemplate(t *testing.T) {
 			if field := filled.Document.Fields[locationIndex]; field.Value == nil || *field.Value != "测试小区 2 栋" {
 				t.Fatal("room details overwrote the location")
 			}
-			if field := filled.Document.Fields[locationIndex+3]; field.Value == nil || *field.Value != "测试中介" || field.Cell != "B15" {
+			if field := filled.Document.Fields[locationIndex+3]; field.Value == nil || *field.Value != "测试中介" || field.Cell != "B16" {
 				t.Fatal("room details overwrote or displaced the agent")
 			}
 		})

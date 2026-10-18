@@ -310,6 +310,9 @@
         "monthly_rent": {
           "$ref": "#/$defs/money"
         },
+        "lease_months": {
+          "$ref": "#/$defs/months"
+        },
         "deposit_months": {
           "$ref": "#/$defs/months"
         },
@@ -337,6 +340,7 @@
         "broker_name",
         "currency",
         "monthly_rent",
+        "lease_months",
         "deposit_months",
         "prepay_months",
         "deposit_amount",

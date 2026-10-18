@@ -18,7 +18,7 @@ import (
 )
 
 const Version = 1
-const RulesVersion = "rental-extraction-v1.0.0"
+const RulesVersion = "rental-extraction-v1.1.0"
 const MaxResultBytes = 16 << 20
 
 //go:embed schema.json instructions.md
@@ -52,7 +52,8 @@ var compiled = sync.OnceValues(func() (*jsonschema.Schema, error) {
 	return c.Compile("rental.json")
 })
 
-// Decode rejects duplicate keys, trailing documents, unknown/missing keys,
+// Decode rejects duplicate keys, trailing documents, unknown/missing keys
+// (except lease_months, which defaults to null for pre-upgrade checkpoints),
 // imprecise decimals, invalid combinations and references outside this input.
 // It cannot prove that a model's natural-language interpretation is true.
 func Decode(raw []byte, input Input) (*ExtractionResult, error) {
@@ -70,6 +71,15 @@ func Decode(raw []byte, input Input) (*ExtractionResult, error) {
 	}
 	if _, err = dec.Token(); err != io.EOF {
 		return nil, errors.New("提取结果包含多余内容")
+	}
+	// Older persisted V1 results predate the optional lease duration. The schema
+	// sent to new extraction sessions still requires an explicit value or null.
+	if root, ok := value.(map[string]any); ok {
+		if rental, ok := root["rental"].(map[string]any); ok {
+			if _, exists := rental["lease_months"]; !exists {
+				rental["lease_months"] = nil
+			}
+		}
 	}
 	schema, err := compiled()
 	if err != nil {
@@ -160,6 +170,9 @@ func (r *ExtractionResult) Quality() string {
 func (r *ExtractionResult) validate(input Input, value any) error {
 	fail := func(s string) error { return fmt.Errorf("提取业务校验失败：%s", s) }
 	v := r.Rental
+	if v.LeaseMonths != nil && !positive(v.LeaseMonths) {
+		return fail("租期月数必须为正")
+	}
 	switch str(v.AreaQualifier) {
 	case "":
 		if v.AreaSqm != nil || v.AreaMinSqm != nil || v.AreaMaxSqm != nil {

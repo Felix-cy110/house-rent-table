@@ -19,7 +19,7 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-var migrationFiles = []string{"001_rental.sql", "002_broker_feedback.sql"}
+var migrationFiles = []string{"001_rental.sql", "002_broker_feedback.sql", "003_lease_months.sql"}
 
 func migrationSource(version int) []byte {
 	raw, _ := migrations.ReadFile("migrations/" + migrationFiles[version-1])
@@ -102,7 +102,8 @@ func (s *MySQL) Migrate(ctx context.Context) error {
 				lines = append(lines, line)
 			}
 		}
-		// These migrations only contain CREATE TABLE statements, without procedural SQL.
+		// Migrations use semicolon-delimited statements without stored procedures
+		// or semicolons inside string literals.
 		for _, statement := range strings.Split(strings.Join(lines, "\n"), ";") {
 			statement = strings.TrimSpace(statement)
 			if statement == "" {
@@ -110,7 +111,7 @@ func (s *MySQL) Migrate(ctx context.Context) error {
 			}
 			statement = strings.Replace(statement, "CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ", 1)
 			if _, err = conn.ExecContext(ctx, statement); err != nil {
-				return errors.New("创建租房业务表失败，请检查 MySQL 版本、权限及现有表结构")
+				return fmt.Errorf("执行租房业务迁移 %d 失败，请检查 MySQL 版本、权限及现有表结构", version)
 			}
 		}
 		_, err = conn.ExecContext(ctx, "INSERT INTO rental_schema_migrations (version,checksum,applied_at) VALUES (?,?,?)", version, checksum, time.Now().UTC())
@@ -161,7 +162,7 @@ func (s *MySQL) SaveTask(ctx context.Context, t Task) error {
 	return err
 }
 
-const rentalColumns = "community_location,area_sqm,area_min_sqm,area_max_sqm,area_qualifier,area_scope,orientation,broker_name,currency,monthly_rent,deposit_months,prepay_months,deposit_amount,quoted_first_month_total,quoted_monthly_total"
+const rentalColumns = "community_location,area_sqm,area_min_sqm,area_max_sqm,area_qualifier,area_scope,orientation,broker_name,currency,monthly_rent,lease_months,deposit_months,prepay_months,deposit_amount,quoted_first_month_total,quoted_monthly_total"
 const chargeColumns = "charge_type,charge_name,direction,pricing_mode,currency,amount,unit_price,unit,ratio,ratio_base,billing_period,payment_timing,source_field_ids,notes"
 
 // SQL identifiers originate only from constants above, never model output.

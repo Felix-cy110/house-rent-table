@@ -4,12 +4,20 @@
     "fileName": "虚构房源示例.xlsx",
     "fields": [
       {
+        "id": "field-15",
+        "label": "租几个月",
+        "value": "12个月",
+        "bold": false,
+        "sheet": "Sheet1",
+        "cell": "B2"
+      },
+      {
         "id": "field-1",
         "label": "房租多少钱一个月",
         "value": "2500元/月",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B2"
+        "cell": "B3"
       },
       {
         "id": "field-2",
@@ -17,7 +25,7 @@
         "value": "押一付三",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B3"
+        "cell": "B4"
       },
       {
         "id": "field-3",
@@ -25,7 +33,7 @@
         "value": "月租的50%，入住时一次性支付",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B4"
+        "cell": "B5"
       },
       {
         "id": "field-4",
@@ -33,7 +41,7 @@
         "value": "5元/吨",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B5"
+        "cell": "B6"
       },
       {
         "id": "field-5",
@@ -41,7 +49,7 @@
         "value": "0.623元/度",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B6"
+        "cell": "B7"
       },
       {
         "id": "field-6",
@@ -49,7 +57,7 @@
         "value": "免费",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B7"
+        "cell": "B8"
       },
       {
         "id": "field-7",
@@ -57,7 +65,7 @@
         "value": "已包含在房租中",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B8"
+        "cell": "B9"
       },
       {
         "id": "field-8",
@@ -65,7 +73,7 @@
         "value": "待确认",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B9"
+        "cell": "B10"
       },
       {
         "id": "field-9",
@@ -73,7 +81,7 @@
         "value": "中介报价11250元",
         "bold": true,
         "sheet": "Sheet1",
-        "cell": "B10"
+        "cell": "B11"
       },
       {
         "id": "field-10",
@@ -81,7 +89,7 @@
         "value": "固定2500元，水电燃气另算",
         "bold": true,
         "sheet": "Sheet1",
-        "cell": "B11"
+        "cell": "B12"
       },
       {
         "id": "field-11",
@@ -89,7 +97,7 @@
         "value": "示例市示例区示例小区（虚构）",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B12"
+        "cell": "B13"
       },
       {
         "id": "field-12",
@@ -97,7 +105,7 @@
         "value": "单间25—30平方米",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B13"
+        "cell": "B14"
       },
       {
         "id": "field-13",
@@ -105,7 +113,7 @@
         "value": "朝南",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B14"
+        "cell": "B15"
       },
       {
         "id": "field-14",
@@ -113,7 +121,7 @@
         "value": "示例中介（虚构）",
         "bold": false,
         "sheet": "Sheet1",
-        "cell": "B15"
+        "cell": "B16"
       }
     ]
   },
