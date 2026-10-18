@@ -64,3 +64,52 @@ test('来源不足正常展示未能核实，模型输出不能注入 HTML 或�
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
   expect(tracked).toBe(false);
 });
+
+test('精简报告段落清晰，手机两三列表格无需横向滚动', async ({ page }) => {
+  const conciseReport = `**首月付款有待解释余额；后续月费的物业费口径不清。**
+
+### 首次付款
+
+若下列费用均首次另收：押金1500＋首期租金1500＋中介费1500＋物业费300＋保洁费100＋燃气费100＝**5000元**。
+
+填写6200元，与该条件小计相差**1200元**，需中介解释。电费用量及部分费用收取时间未知，不能直接认定为多收。
+
+### 收费口径
+
+| 项目 | 报价 | 待确认 |
+| --- | --- | --- |
+| 物业费 | 300元/月 | 后续月费1500元是否已含 |
+| 保洁、燃气 | 各100元 | 覆盖期间及首次是否收取 |
+
+| 价格核实 | 结果 |
+| --- | --- |
+| 电费 | 本测试使用[虚构收费说明](https://example.com/fees)，仅用于验证来源链接排版 |
+
+### 向中介确认
+
+1. 提供首次付款明细，解释余额及电费是否计入。
+2. 确认物业费是否另付，以及一次性费用的覆盖期间。`;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: true, pending: false } }));
+  await page.route('**/api/analyze', route => route.fulfill({ json: { text: conciseReport } }));
+  await page.goto('/');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '1500'], ['押几付几', '押一付一'], ['首月总共要付多少', '6200']], '精简报告.xlsx', ['A3']));
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  const reportBody = page.locator('.review-report');
+  await expect(reportBody.locator('h3')).toHaveCount(3);
+  await expect(reportBody.locator('table')).toHaveCount(2);
+  await expect(reportBody.locator('strong')).toContainText(['首月付款有待解释余额', '5000元', '1200元']);
+  await expect(reportBody).not.toContainText('field-');
+  await expect(reportBody.locator('.report-table-wide')).toHaveCount(0);
+  for (const table of await reportBody.locator('.report-table').all()) {
+    expect(await table.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    await expect(table).toHaveAttribute('aria-label', '费用明细表');
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await reportBody.screenshot({ path: 'test-results/mobile-review-concise.png' });
+  await page.getByText('查看 Codex 原文', { exact: true }).click();
+  expect(await page.locator('.codex-response').textContent()).toBe(conciseReport);
+  await page.getByText('查看 Codex 原文', { exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await reportBody.screenshot({ path: 'test-results/desktop-review-concise.png' });
+});

@@ -24,10 +24,11 @@ export function renderReport(text: string): DocumentFragment {
   report.innerHTML = markdown.render(text);
   for (const table of report.querySelectorAll('table')) {
     const scroll = document.createElement('div');
-    scroll.className = 'report-table';
+    const columns = table.rows[0]?.cells.length ?? 0;
+    scroll.className = columns > 3 ? 'report-table report-table-wide' : 'report-table';
     scroll.tabIndex = 0;
     scroll.setAttribute('role', 'region');
-    scroll.setAttribute('aria-label', '费用明细表，可横向滚动');
+    scroll.setAttribute('aria-label', columns > 3 ? '费用明细表，可横向滚动' : '费用明细表');
     table.replaceWith(scroll);
     scroll.append(table);
   }

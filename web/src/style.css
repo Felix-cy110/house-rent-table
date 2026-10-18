@@ -93,17 +93,23 @@ summary { font-size: 12px; cursor: pointer; color: #526b88; }
 .payload-preview { margin-top: 20px; }
 .payload-preview pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; background: #f7f9fb; border-radius: 6px; }
 .codex-response { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.9; }
-.review-report { min-width: 0; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
-.review-report h1, .review-report h2, .review-report h3 { display: block; font-size: 16px; letter-spacing: 0; margin: 24px 0 10px; }
+.review-report { min-width: 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
+.review-report h1, .review-report h2 { display: block; font-size: 18px; line-height: 1.5; letter-spacing: 0; margin: 26px 0 12px; }
+.review-report h3 { display: block; font-size: 16px; line-height: 1.5; margin: 24px 0 10px; }
 .review-report > :first-child { margin-top: 0; }
 .review-report p { margin: 10px 0; }
 .review-report a { text-decoration: underline; }
-.review-report ul, .review-report ol { padding-left: 24px; }
+.review-report ul, .review-report ol { margin: 12px 0; padding-left: 22px; }
+.review-report li { padding-left: 3px; margin: 8px 0; }
+.review-report li > p { margin: 6px 0; }
+.review-report code { padding: 2px 4px; border-radius: 3px; background: #f3f5f8; font-size: .9em; }
 .review-report pre { overflow: auto; padding: 12px; background: #f7f9fb; border-radius: 6px; }
 .review-report blockquote { margin: 12px 0; padding-left: 14px; border-left: 3px solid #c5d1e0; color: #526b88; }
 .report-table { max-width: 100%; overflow-x: auto; margin: 14px 0; }
-.report-table table { min-width: 580px; table-layout: auto; font-size: 13px; }
-.report-table th, .report-table td { width: auto; padding: 10px; white-space: normal; min-width: 84px; }
+.report-table table { table-layout: fixed; font-size: 13px; }
+.report-table-wide table { min-width: 580px; table-layout: auto; }
+.report-table th, .report-table td { width: auto; padding: 10px; white-space: normal; }
+.report-table-wide th, .report-table-wide td { min-width: 84px; }
 .report-table thead th:first-child { width: auto; }
 .raw-report { border-top: 1px solid #eef0f3; margin-top: 24px; padding-top: 16px; }
 .raw-report .codex-response { margin-top: 12px; }
