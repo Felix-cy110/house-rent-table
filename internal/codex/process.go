@@ -91,6 +91,18 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 	if len(extractionOnly) > 0 && extractionOnly[0] {
 		cmd.Args = append(cmd.Args, "-c", `web_search="disabled"`)
 	}
+	var catalogPath string
+	removeCatalog := func() {
+		if catalogPath != "" {
+			_ = os.Remove(catalogPath)
+		}
+	}
+	processOwnsCatalog := false
+	defer func() {
+		if !processOwnsCatalog {
+			removeCatalog()
+		}
+	}()
 	if provider != nil {
 		// JSON strings are also TOML basic strings. Never interpolate unquoted input.
 		quote := func(s string) string { data, _ := json.Marshal(s); return string(data) }
@@ -102,6 +114,11 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 			"-c", "model_providers.rental_custom.requires_openai_auth=false")
 		if provider.Model != "" {
 			cmd.Args = append(cmd.Args, "-c", "model="+quote(provider.Model))
+			catalogPath, err = standardResponsesCatalog(cwd, provider.Model)
+			if err != nil {
+				return nil, analysis.ErrUnavailable
+			}
+			cmd.Args = append(cmd.Args, "-c", "model_catalog_json="+quote(catalogPath))
 		}
 	} else {
 		cmd.Args = append(cmd.Args, "-c", `model_provider="openai"`)
@@ -145,10 +162,12 @@ func start(binary, home, cwd string, provider *providerConfig, notify func(messa
 		out.Close()
 		return nil, analysis.ErrUnavailable
 	}
+	processOwnsCatalog = true
 	c := &client{provider: provider, process: process, in: in, done: make(chan struct{}), pending: make(map[string]chan message), notify: notify}
 	exited := make(chan struct{})
 	go func() {
 		defer close(exited)
+		defer removeCatalog()
 		_ = process.Wait()
 		_ = process.Kill() // Reap descendants even if the root exits by itself.
 	}()
