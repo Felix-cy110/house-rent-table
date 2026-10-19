@@ -23,7 +23,7 @@ const report = `## 主要发现
 
 [1：收费公示](https://example.com/fees)，发布于 2026-09-01，查询于 2026-10-13；本测试使用虚构来源。`;
 
-test('Responses 引用显示可点击来源，保留 Unicode 原文并拒绝危险引用', async ({ page }) => {
+test('归一化引用显示可点击来源，保留 Unicode 原文并拒绝危险引用', async ({ page }) => {
   const text = '参考价🏠[来源]。';
   const citations = [
     { title: '<img onerror="window.hacked=true">', url: 'https://example.com/fees', startIndex: 4, endIndex: 8 },
@@ -47,7 +47,7 @@ test('Responses 引用显示可点击来源，保留 Unicode 原文并拒绝危�
 
 test('费用对照表和来源可阅读，保留完整回复原文，手机仅表格横向滚动', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: 'mimo', model: 'mimo-v2.6-flash', name: 'MiMo v2.6-Flash' } }));
   await page.route('**/api/analyze', route => route.fulfill({ json: { text: report } }));
   await page.goto('/');
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '3000'], ['押几付几', '押一付三'], ['物业费', '300元/月'], ['首次付款', '12000']], '测试房源.xlsx', ['A4']));
@@ -112,7 +112,7 @@ test('精简报告段落清晰，手机两三列表格无需横向滚动', async
 1. 提供首次付款明细，解释余额及电费是否计入。
 2. 确认物业费是否另付，以及一次性费用的覆盖期间。`;
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: 'mimo', model: 'mimo-v2.6-flash', name: 'MiMo v2.6-Flash' } }));
   await page.route('**/api/analyze', route => route.fulfill({ json: { text: conciseReport } }));
   await page.goto('/');
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '1500'], ['押几付几', '押一付一'], ['首月总共要付多少', '6200']], '精简报告.xlsx', ['A3']));

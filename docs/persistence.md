@@ -63,7 +63,7 @@ V3 的 `internal/persistence/migrations/003_lease_months.sql` 在房源记录中
 
 若入队失败，页面明确提示后台任务未创建，主报告仍继续。本地存储故障时无法同时承诺无损记录和主流程永远成功。机器故障发生在模型已返回但结果尚未落盘的极短窗口，恢复后也可能再次调用模型；不宣称外部 AI 调用恰好一次。
 
-后台使用本应用的 API 配置，独立发送 HTTP 请求并设置超时。提取使用 JSON Schema 结构化输出，不提供联网或计算工具、不加载主分析规则；每次提取尝试读取当时选定的提供方，数据库补写不会接触 AI。任务中不保存 API Key。退出服务取消运行中的请求，保留未完成队列；升级提取规则后，尚未提取的旧版本任务明确失败，避免静默改变规则。
+后台使用本应用的 API 配置，独立发送 HTTP 请求并设置超时。提取始终开启思考，使用 JSON 模式与包含完整 JSON Schema 的系统指令，不提供联网或计算工具、不加载主分析规则；每次提取尝试读取当时选定的提供方，数据库补写不会接触 AI。任务中不保存 API Key。退出服务取消运行中的请求，保留未完成队列；升级提取规则后，尚未提取的旧版本任务明确失败，避免静默改变规则。
 
 ## 状态查询
 
@@ -88,13 +88,13 @@ $env:RENT_TEST_MYSQL_DSN = '测试账号:密码@tcp(127.0.0.1:3306)/rental_test'
 go test ./internal/persistence -run TestMySQL -count=1
 ```
 
-使用本地模拟 HTTP 服务验证两种 API 的独立提取请求、JSON Schema 与规则，不访问真实供应商、不消耗模型额度：
+使用本地模拟 HTTP 服务验证三家模型的独立提取请求、JSON 模式、思考参数、JSON Schema 与规则，不访问真实供应商、不消耗模型额度：
 
 ```powershell
 go test ./internal/aiclient -run TestExtractionUsesIndependentStructuredRequest -count=1
 ```
 
-2026-10-19 直接 API 接入验证：全量 Go 测试、go vet、前端构建、29 项 Playwright 测试和模板检查通过。本地 HTTP 服务验证 Chat Completions 与 Responses 提取使用独立请求、原有 Schema 和规则，不携带主报告工具；本轮未重新运行真实 MySQL 集成测试，也未调用真实模型。
+2026-10-19 三模型适配验证：全量 Go 测试、go vet、前端构建、30 项 Playwright 测试和模板检查通过。三家提取均使用独立的 Chat Completions 请求、JSON 模式及原有 Schema 和规则，显式开启思考，不携带主报告工具。提取的 provider 元数据为固定标识 mimo/glm/deepseek，model 优先记录供应商返回值；历史元数据不回填。本轮未重新运行真实 MySQL 集成测试，也未调用真实模型。
 
 以下是迁移到直接 API 接入前的历史验证记录，其中 CLI 协议测试已被上述 HTTP 接口测试替换。
 
@@ -106,4 +106,4 @@ go test ./internal/aiclient -run TestExtractionUsesIndependentStructuredRequest 
 
 2026-10-18 新增总租期后，模板检查、全量 Go 测试、go vet、前端构建和独立 PR 分支的 27 项 Playwright 测试通过。隔离 MySQL 9.1 的全部持久化测试通过，新增用例验证 V2 升至 V3、历史记录租期保持 NULL、12 个月与半个月独立于押付月数保存、零租期被拒绝，以及 DDL 完成但未记版本时的迁移重放；测试库已清理。本机 `.env` 对应项目库已执行 V3 迁移，真实 Codex CLI 对接本地模拟 Responses 服务的提取 Schema 测试也已通过。
 
-自定义供应商是否真正遵守结构化输出，仍需在对应提供方环境验证；服务端始终执行独立校验，不依赖供应商声明。本轮未调用真实模型供应商。
+指定模型是否真正遵守结构化要求，仍需在对应提供方环境验证；服务端始终执行独立校验，不依赖供应商声明。本轮未调用真实模型供应商。

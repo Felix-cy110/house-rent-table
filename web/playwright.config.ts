@@ -16,7 +16,7 @@ export default defineConfig({
   },
   webServer: {
     env: { RENT_MYSQL_DSN: '' },
-    command: 'go run ./cmd/server -addr 127.0.0.1:18080 -ai-config-dir .work/ai-browser-tests',
+    command: 'go run -tags=e2e ./internal/e2etest',
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     url: 'http://127.0.0.1:18080/api/health',
     reuseExistingServer: false,

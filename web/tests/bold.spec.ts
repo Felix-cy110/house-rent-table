@@ -4,7 +4,7 @@ import type { RentalDocument } from '../src/types';
 
 test('加粗项目作为目标展示，完整布尔标记与原文一起发送，取消加粗后清除标记', async ({ page }) => {
   const submitted: string[] = [];
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: 'mimo', model: 'mimo-v2.6-flash', name: 'MiMo v2.6-Flash' } }));
   await page.route('**/api/analyze', route => {
     submitted.push(route.request().postData()!);
     return route.fulfill({ json: { text: '本测试仅验证加粗标记传递。' } });

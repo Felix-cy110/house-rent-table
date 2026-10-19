@@ -1,16 +1,20 @@
 import { expect, test } from '@playwright/test';
-import { createServer } from 'node:http';
 import { file } from './xlsx';
 
-test('直接显示三项必填配置，页面不再提供 Codex 登录或导入', async ({ page }) => {
+test('显示三种固定模型与必填密钥，页面不再提供 Codex 登录或导入', async ({ page }) => {
   await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: false } }));
   await page.goto('/');
   await expect(page.locator('#account-status')).toHaveText('未配置');
-  for (const name of ['API URL', '模型', 'API Key']) {
+  for (const name of ['模型', 'API Key']) {
     await expect(page.getByLabel(name, { exact: true })).toBeVisible();
     await expect(page.getByLabel(name, { exact: true })).toHaveAttribute('required', '');
   }
   await expect(page.getByRole('button', { name: '验证并保存', exact: true })).toBeVisible();
+  await expect(page.locator('#api-provider option')).toHaveText(['MiMo v2.6-Flash', 'GLM 5.3-Flash', 'DeepSeek Flash']);
+  await expect(page.locator('#api-base-url, #api-model')).toHaveCount(0);
+  await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
+  await expect(page.locator('#provider-note')).toContainText('DeepSeek V4.1-Flash-1017');
+  await expect(page.locator('#provider-note')).toContainText('2026-10-19');
   await expect(page.locator('body')).not.toContainText('Codex');
   await expect(page.locator('body')).not.toContainText('OAuth');
   await expect(page.locator('body')).not.toContainText('CC Switch');
@@ -20,7 +24,7 @@ test('验证完成前显示等待，失败可重试并保留原配置', async ({
   let connected = false;
   let attempts = 0;
   let finishProbe: (success: boolean) => void = () => {};
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: connected ? 'new-model' : 'original-model', baseUrl: 'https://gateway.example/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: connected ? 'glm' : 'mimo', model: connected ? 'glm-5.3-flash' : 'mimo-v2.6-flash', name: connected ? 'GLM 5.3-Flash' : 'MiMo v2.6-Flash' } }));
   await page.route('**/api/ai/connect', async route => {
     attempts++;
     const success = await new Promise<boolean>(resolve => { finishProbe = resolve; });
@@ -28,12 +32,11 @@ test('验证完成前显示等待，失败可重试并保留原配置', async ({
     await route.fulfill(success ? { json: { ok: true } } : { status: 502, json: { error: { code: 'connection_failed', message: 'API Key 无效或已过期，请检查后重新填写' } } });
   });
   await page.goto('/');
-  const original = '已配置 · original-model · https://gateway.example/v1';
+  const original = '已配置 · MiMo v2.6-Flash · 思考已开启';
   await expect(page.locator('#account-status')).toHaveText(original);
   await page.getByRole('button', { name: '修改配置', exact: true }).click();
-  await expect(page.getByLabel('API URL', { exact: true })).toHaveValue('https://gateway.example/v1');
-  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('original-model');
-  await page.getByLabel('模型', { exact: true }).fill('new-model');
+  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('mimo');
+  await page.getByLabel('模型', { exact: true }).selectOption('glm');
   await page.getByLabel('API Key', { exact: true }).fill('wrong-test-secret');
   const button = page.locator('#key-connect');
   const successDialog = page.getByRole('dialog', { name: '连接成功', exact: true });
@@ -43,7 +46,7 @@ test('验证完成前显示等待，失败可重试并保留原配置', async ({
   await expect(page.locator('#account-status')).toHaveText('正在验证连接…');
   await expect(button).toBeDisabled();
   await expect(page.locator('#account-refresh')).toBeDisabled();
-  await expect(page.getByLabel('API URL', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('模型', { exact: true })).toBeDisabled();
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
   await expect(successDialog).toBeHidden();
   finishProbe(false);
@@ -53,12 +56,12 @@ test('验证完成前显示等待，失败可重试并保留原配置', async ({
   await expect(button).toBeEnabled();
   await failureDialog.getByRole('button', { name: '知道了', exact: true }).click();
   await expect(button).toBeFocused();
-  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('new-model');
+  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('glm');
   await page.getByLabel('API Key', { exact: true }).fill('correct-test-secret');
   await button.click();
   await expect.poll(() => attempts).toBe(2);
   finishProbe(true);
-  await expect(page.locator('#account-status')).toHaveText('已配置 · new-model · https://gateway.example/v1');
+  await expect(page.locator('#account-status')).toHaveText('已配置 · GLM 5.3-Flash · 思考已开启');
   await expect(successDialog).toBeVisible();
   await expect(successDialog).toContainText('已收到模型的测试回复');
   await expect(page.locator('#login-options')).toBeHidden();
@@ -70,31 +73,30 @@ test('验证完成前显示等待，失败可重试并保留原配置', async ({
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
-test('连接只提交三项配置，刷新可恢复且清除后移除配置', async ({ page }) => {
+test('连接只提交供应商和密钥，刷新可恢复且清除后移除配置', async ({ page }) => {
   let connected = false;
   let submitted: unknown;
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected, model: 'chosen-model', baseUrl: 'https://gateway.example/v1/responses' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected, provider: 'deepseek', model: 'deepseek-flash', name: 'DeepSeek Flash' } }));
   await page.route('**/api/ai/connect', route => {
     submitted = route.request().postDataJSON(); connected = true;
     return route.fulfill({ json: { ok: true } });
   });
   await page.route('**/api/ai/disconnect', route => { connected = false; return route.fulfill({ json: { ok: true } }); });
   await page.goto('/');
-  await page.getByLabel('API URL', { exact: true }).fill('https://gateway.example/v1/responses');
-  await page.getByLabel('模型', { exact: true }).fill('chosen-model');
+  await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
   await page.getByLabel('API Key', { exact: true }).fill('custom-test-secret');
   await page.getByRole('button', { name: '验证并保存', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeVisible();
-  expect(submitted).toEqual({ apiKey: 'custom-test-secret', baseUrl: 'https://gateway.example/v1/responses', model: 'chosen-model' });
+  expect(submitted).toEqual({ apiKey: 'custom-test-secret', provider: 'deepseek' });
   await expect(page.locator('#api-key')).toHaveValue('');
   await expect(page.locator('body')).not.toContainText('custom-test-secret');
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await page.reload();
-  await expect(page.locator('#account-status')).toHaveText('已配置 · chosen-model · https://gateway.example/v1/responses');
+  await expect(page.locator('#account-status')).toHaveText('已配置 · DeepSeek Flash · 思考已开启');
+  await expect(page.locator('#connected-version')).toContainText('DeepSeek V4.1-Flash-1017');
   await page.getByRole('button', { name: '清除配置', exact: true }).click();
   await expect(page.locator('#account-status')).toHaveText('未配置');
-  await expect(page.getByLabel('API URL', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('模型', { exact: true })).toHaveValue('mimo');
   await expect(page.getByLabel('API Key', { exact: true })).toHaveValue('');
 });
 
@@ -102,8 +104,7 @@ test('首次连接超时后保持未配置且可重试', async ({ page }) => {
   await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: false } }));
   await page.route('**/api/ai/connect', route => route.fulfill({ status: 504, json: { error: { code: 'connection_failed', message: '连接验证超时，请检查网络后重试' } } }));
   await page.goto('/');
-  await page.getByLabel('API URL', { exact: true }).fill('https://gateway.example/v1');
-  await page.getByLabel('模型', { exact: true }).fill('chosen-model');
+  await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
   await page.getByLabel('API Key', { exact: true }).fill('test-secret');
   await page.getByRole('button', { name: '验证并保存', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '连接失败', exact: true });
@@ -115,7 +116,7 @@ test('首次连接超时后保持未配置且可重试', async ({ page }) => {
 });
 
 test('分析失败可重试，取消后旧回复不会覆盖新分析', async ({ page }) => {
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'm', baseUrl: 'https://example.com/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: 'mimo', name: 'MiMo v2.6-Flash', model: 'mimo-v2.6-flash' } }));
   let calls = 0;
   await page.route('**/api/analyze', async route => {
     calls++;
@@ -142,34 +143,10 @@ test('分析失败可重试，取消后旧回复不会覆盖新分析', async ({
   await expect(page.locator('.ai-response')).toHaveText('最新回复');
 });
 
-test('真实 Go 服务直连本地 API 完成配置、工具核算和分析', async ({ page }) => {
-  let calls = 0;
-  const provider = createServer(async (request, response) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of request) chunks.push(Buffer.from(chunk));
-    const input = JSON.parse(Buffer.concat(chunks).toString());
-    expect(request.url).toBe('/v1/chat/completions');
-    expect(request.headers.authorization).toBe('Bearer local-test-only-key');
-    expect(input.model).toBe('local-test-model');
-    calls++;
-    response.setHeader('Content-Type', 'application/json');
-    if (!input.tools) {
-      response.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'OK' } }] }));
-    } else if (input.messages.at(-1).role !== 'tool') {
-      expect(input.messages[1].content).toContain('月租');
-      response.end(JSON.stringify({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: null, tool_calls: [{ id: 'calc1', type: 'function', function: { name: 'rental_calculate', arguments: JSON.stringify({ calculations: [{ label: '押一付三', expression: '2000*(1+3)' }] }) } }] } }] }));
-    } else {
-      expect(input.messages.at(-1).content).toContain('8000.00');
-      response.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: '押一付三合计 8000.00 元。\n\n未能核实：当前接口未提供联网搜索。' } }] }));
-    }
-  });
-  await new Promise<void>(resolve => provider.listen(0, '127.0.0.1', resolve));
-  const address = provider.address();
-  if (!address || typeof address === 'string') throw new Error('provider did not start');
+test('真实 Go 服务通过隔离传输完成配置、思考续传、核算与来源展示', async ({ page }) => {
   try {
     await page.goto('/');
-    await page.getByLabel('API URL', { exact: true }).fill(`http://127.0.0.1:${address.port}/v1`);
-    await page.getByLabel('模型', { exact: true }).fill('local-test-model');
+    await page.getByLabel('模型', { exact: true }).selectOption('mimo');
     await page.getByLabel('API Key', { exact: true }).fill('local-test-only-key');
     await page.getByRole('button', { name: '验证并保存', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeVisible();
@@ -177,13 +154,31 @@ test('真实 Go 服务直连本地 API 完成配置、工具核算和分析', as
     await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '2000'], ['押几付几', '押一付三']]));
     await page.getByRole('button', { name: '发送并分析' }).click();
     await expect(page.locator('.review-report')).toContainText('8000.00 元');
-    expect(calls).toBe(3);
+    await expect(page.locator('body')).not.toContainText('fixture-private-thinking');
+    await page.locator('.report-sources summary').click();
+    await expect(page.getByRole('link', { name: '测试公示' })).toHaveAttribute('href', 'https://example.com/fees');
     await page.reload();
-    await expect(page.locator('#account-status')).toContainText('local-test-model');
+    await expect(page.locator('#account-status')).toContainText('MiMo v2.6-Flash');
     await page.getByRole('button', { name: '清除配置', exact: true }).click();
     await expect(page.locator('#account-status')).toHaveText('未配置');
-  } finally {
-    await page.request.post('/api/ai/disconnect');
-    await new Promise<void>(resolve => provider.close(() => resolve()));
-  }
+  } finally { await page.request.post('/api/ai/disconnect'); }
+});
+
+test('旧配置提示重连，来源缺少位置仍展示且不解释 HTML', async ({ page }) => {
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: false, needsReconnect: true } }));
+  await page.route('**/api/analyze', route => route.fulfill({ json: {
+    text: '费用计算完成。',
+    sources: [{ title: '<img src=x onerror=alert(1)>', url: 'https://example.com/safe' }, { title: '危险链接', url: 'javascript:alert(1)' }],
+    warnings: ['本次搜索未完整完成，价格仍需核实。'],
+  } }));
+  await page.goto('/');
+  await expect(page.locator('#account-status')).toContainText('请重新配置');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '2000']]));
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  await expect(page.locator('.report-warnings')).toContainText('价格仍需核实');
+  await page.locator('.report-sources summary').click();
+  await expect(page.locator('.report-sources a')).toHaveCount(1);
+  await expect(page.locator('.report-sources a')).toHaveText('<img src=x onerror=alert(1)>');
+  await expect(page.locator('.report-sources img')).toHaveCount(0);
+  await expect(page.locator('.ai-response')).toHaveText('费用计算完成。');
 });
