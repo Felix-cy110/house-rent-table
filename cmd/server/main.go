@@ -41,7 +41,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	agent := aiclient.New(aiclient.Options{ConfigDir: *aiConfigDir, RentPremiumTolerance: rentTolerance, SearchFallback: fallback})
+	searchLimit, err := aiclient.ParseSearchLimit(os.Getenv("RENT_SEARCH_MAX_CALLS"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	agent := aiclient.New(aiclient.Options{ConfigDir: *aiConfigDir, RentPremiumTolerance: rentTolerance, SearchFallback: fallback, SearchLimit: searchLimit})
 	var background *persistence.Worker
 	var feedbackStore httpapi.BrokerFeedbackStore
 	var defaultCurrency *string

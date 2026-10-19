@@ -274,7 +274,7 @@ func TestMiMoFallbackIsBoundedAndCancelable(t *testing.T) {
 					t.Fatal("fallback was retried more than once")
 				}
 			case "budget":
-				if rounds != maxToolRounds || searches != maxSearchCalls || err == nil {
+				if rounds != s.toolRoundLimit() || searches != s.opts.SearchLimit || err == nil {
 					t.Fatalf("budgets reset: rounds=%d searches=%d err=%v", rounds, searches, err)
 				}
 			case "search-fails":

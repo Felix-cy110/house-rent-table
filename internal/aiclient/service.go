@@ -27,6 +27,7 @@ type Options struct {
 	HTTPClient           *http.Client
 	RentPremiumTolerance *int
 	SearchFallback       SearchFallback
+	SearchLimit          int // Zero uses the default per-analysis search limit.
 }
 
 type Service struct {
@@ -40,6 +41,9 @@ type Service struct {
 }
 
 func New(opts Options) *Service {
+	if opts.SearchLimit < 1 || opts.SearchLimit > 100 {
+		opts.SearchLimit = defaultSearchLimit
+	}
 	client := http.Client{Timeout: 5 * time.Minute}
 	if opts.HTTPClient != nil {
 		client = *opts.HTTPClient
