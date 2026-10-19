@@ -234,13 +234,18 @@ func TestSearchLimitsAndUnknownToolsNeverInvokeNetwork(t *testing.T) {
 		t.Fatal("invalid search invoked network")
 		return nil, errors.New("unexpected")
 	})}})
+	budget := &searchBudget{limit: defaultSearchLimit}
 	for _, args := range []string{`{}`, `{"query":" "}`, `{"query":"x","url":"https://elsewhere"}`, `{"query":"x"}{}`, `{"query":"` + strings.Repeat("字", 129) + `"}`} {
-		_, _, warning := s.search(context.Background(), "key", p, args, 1)
+		_, _, warning := s.search(context.Background(), "key", p, args, budget)
 		if warning == "" {
 			t.Fatal("invalid search accepted")
 		}
 	}
-	if _, _, warning := s.search(context.Background(), "key", p, `{"query":"正常"}`, 9); warning == "" {
+	if budget.calls != 0 {
+		t.Fatal("invalid arguments consumed search budget")
+	}
+	budget.calls = budget.limit
+	if _, _, warning := s.search(context.Background(), "key", p, `{"query":"正常"}`, budget); warning == "" {
 		t.Fatal("search budget ignored")
 	}
 	if !strings.Contains(calculate("shell", "{}"), "不允许") {

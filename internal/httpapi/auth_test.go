@@ -156,6 +156,7 @@ func TestAnalysisErrorsHaveUsefulStatusWithoutUpstreamSecrets(t *testing.T) {
 	}{
 		{analysis.ErrLoginRequired, 401, "ai_config_required"}, {analysis.ErrBusy, 409, "ai_busy"},
 		{analysis.ErrUnavailable, 503, "ai_unavailable"}, {context.DeadlineExceeded, 504, "ai_timeout"},
+		{analysis.ErrSearchUnavailable, 503, "search_unavailable"},
 		{errors.New("upstream leaked-key-example"), 502, "ai_failed"},
 	} {
 		r := httptest.NewRequest("POST", "/api/analyze", strings.NewReader(`{"schemaVersion":1,"fileName":"test.xlsx","fields":[{"id":"f1","label":"任意字段","value":null,"sheet":"S","cell":"B2"}]}`))

@@ -7,10 +7,11 @@ import (
 )
 
 var (
-	ErrLoginRequired = errors.New("API configuration required")
-	ErrUnavailable   = errors.New("API configuration unavailable")
-	ErrBusy          = errors.New("AI service busy")
-	ErrFailed        = errors.New("AI request failed")
+	ErrLoginRequired     = errors.New("API configuration required")
+	ErrUnavailable       = errors.New("API configuration unavailable")
+	ErrBusy              = errors.New("AI service busy")
+	ErrFailed            = errors.New("AI request failed")
+	ErrSearchUnavailable = errors.New("search fallback not configured")
 )
 
 // Analyzer receives the original, validated JSON bytes and returns final text.
