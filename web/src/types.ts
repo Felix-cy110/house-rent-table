@@ -20,13 +20,15 @@ export interface ImportResult {
 
 export interface AnalysisResult {
   text: string;
+  citations?: Citation[];
 }
+
+export interface Citation { title: string; url: string; startIndex: number; endIndex: number }
 
 export interface BrokerFeedback { brokerName: string; feedbackCount: number }
 
 export interface PersistenceReceipt { status: 'queued' | 'failed'; taskId: string | null }
 export interface PersistenceStatus { taskId: string; stage: 'EXTRACT' | 'PERSIST'; status: 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'SUCCEEDED' | 'FAILED'; message?: string }
 
-export interface CodexAccount { loggedIn: boolean; authType?: string; email?: string; pending: boolean; error?: string; provider?: string; model?: string; source?: 'manual' | 'ccswitch' }
-export interface CodexLogin { type: 'chatgpt' | 'apiKey'; authUrl?: string }
-export interface CodexConnection { type: 'chatgpt' | 'apiKey'; apiKey?: string; baseUrl?: string; model?: string; source?: 'ccswitch'; configDir?: string }
+export interface APIAccount { connected: boolean; baseUrl: string; model: string }
+export interface APIConnection { apiKey: string; baseUrl: string; model: string }

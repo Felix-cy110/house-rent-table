@@ -1,4 +1,4 @@
-import type { AnalysisResult, ImportResult, CodexAccount, CodexLogin, CodexConnection, PersistenceReceipt, PersistenceStatus, BrokerFeedback } from './types';
+import type { AnalysisResult, ImportResult, APIAccount, APIConnection, PersistenceReceipt, PersistenceStatus, BrokerFeedback } from './types';
 
 export class APIError extends Error {
   constructor(public code: string, message: string) {
@@ -48,16 +48,16 @@ export async function reportBroker(brokerName: string): Promise<BrokerFeedback> 
   }));
 }
 
-export async function account(): Promise<CodexAccount> {
-  return readResponse<CodexAccount>(await fetch('/api/codex/account'));
+export async function account(): Promise<APIAccount> {
+  return readResponse<APIAccount>(await fetch('/api/ai/config'));
 }
 
-export async function login(connection: CodexConnection): Promise<CodexLogin> {
-  return readResponse<CodexLogin>(await fetch('/api/codex/login', {
+export async function login(connection: APIConnection): Promise<{ ok: boolean }> {
+  return readResponse<{ ok: boolean }>(await fetch('/api/ai/connect', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(connection),
   }));
 }
 
 export async function logout(): Promise<void> {
-  await readResponse(await fetch('/api/codex/logout', { method: 'POST' }));
+  await readResponse(await fetch('/api/ai/disconnect', { method: 'POST' }));
 }

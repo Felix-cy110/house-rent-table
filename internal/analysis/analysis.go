@@ -7,10 +7,10 @@ import (
 )
 
 var (
-	ErrLoginRequired = errors.New("codex login required")
-	ErrUnavailable   = errors.New("codex unavailable")
-	ErrBusy          = errors.New("codex busy")
-	ErrFailed        = errors.New("codex analysis failed")
+	ErrLoginRequired = errors.New("API configuration required")
+	ErrUnavailable   = errors.New("API configuration unavailable")
+	ErrBusy          = errors.New("AI service busy")
+	ErrFailed        = errors.New("AI request failed")
 )
 
 // Analyzer receives the original, validated JSON bytes and returns final text.
@@ -21,23 +21,26 @@ type Analyzer interface {
 }
 
 type Result struct {
-	Text string `json:"text"`
+	Text      string     `json:"text"`
+	Citations []Citation `json:"citations,omitempty"`
+}
+
+// Citation indexes count Unicode code points in Text, as in Responses output.
+type Citation struct {
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	StartIndex int    `json:"startIndex"`
+	EndIndex   int    `json:"endIndex"`
 }
 
 type Account struct {
-	LoggedIn bool   `json:"loggedIn"`
-	AuthType string `json:"authType,omitempty"`
-	Email    string `json:"email,omitempty"`
-	Pending  bool   `json:"pending"`
-	Error    string `json:"error,omitempty"`
-	Provider string `json:"provider,omitempty"`
-	Model    string `json:"model,omitempty"`
-	Source   string `json:"source,omitempty"`
+	Connected bool   `json:"connected"`
+	BaseURL   string `json:"baseUrl,omitempty"`
+	Model     string `json:"model,omitempty"`
 }
 
 type Login struct {
-	Type    string `json:"type"`
-	AuthURL string `json:"authUrl,omitempty"`
+	OK bool `json:"ok"`
 }
 
 type Authenticator interface {

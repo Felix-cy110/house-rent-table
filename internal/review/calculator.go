@@ -16,7 +16,7 @@ import (
 
 const ToolName = "rental_calculate"
 
-// ToolSpec follows Codex app-server's experimental DynamicToolSpec schema.
+// ToolSpec describes the bounded arithmetic function for the HTTP API adapter.
 func ToolSpec() map[string]any {
 	return map[string]any{
 		"type": "function", "name": ToolName,

@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/Felix-cy110/house-rent-table/internal/codex"
+	"github.com/Felix-cy110/house-rent-table/internal/aiclient"
 	"github.com/Felix-cy110/house-rent-table/internal/config"
 	"github.com/Felix-cy110/house-rent-table/internal/httpapi"
 	"github.com/Felix-cy110/house-rent-table/internal/persistence"
@@ -26,9 +26,7 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8080", "HTTP listen address")
 	webDir := flag.String("web-dir", "web/dist", "built frontend directory")
 	template := flag.String("template", "", "optional XLSX template path")
-	codexBinary := flag.String("codex-bin", "", "optional native Codex executable path")
-	codexHome := flag.String("codex-home", "", "app-specific Codex credential/config directory")
-	codexModel := flag.String("codex-model", "", "optional Codex model override")
+	aiConfigDir := flag.String("ai-config-dir", "", "directory for this app's saved API connection")
 	rentTolerance := flag.Int("rent-premium-tolerance", 20, "rent premium tolerance percent, 0 to 100 (a review hint, not a market standard)")
 	queueDir := flag.String("persistence-dir", os.Getenv("RENT_PERSISTENCE_DIR"), "optional durable background queue directory")
 	flag.Parse()
@@ -39,8 +37,7 @@ func main() {
 	if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
 		log.Fatal("本轮仅支持本机单用户运行，请使用 127.0.0.1 或 localhost 监听地址")
 	}
-	agent := codex.New(codex.Options{Binary: *codexBinary, Home: *codexHome, Model: *codexModel, RentPremiumTolerance: rentTolerance})
-	defer agent.Close()
+	agent := aiclient.New(aiclient.Options{ConfigDir: *aiConfigDir, RentPremiumTolerance: rentTolerance})
 	var background *persistence.Worker
 	var feedbackStore httpapi.BrokerFeedbackStore
 	var defaultCurrency *string

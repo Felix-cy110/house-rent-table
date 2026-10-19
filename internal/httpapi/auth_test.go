@@ -15,29 +15,26 @@ import (
 type fakeAuth struct {
 	input analysis.LoginRequest
 	key   string
-	kind  string
 	fail  error
 }
 
 func (a *fakeAuth) Account(context.Context) (analysis.Account, error) {
-	return analysis.Account{LoggedIn: a.key != ""}, a.fail
+	return analysis.Account{Connected: a.key != ""}, a.fail
 }
 func (a *fakeAuth) Login(_ context.Context, input analysis.LoginRequest) (analysis.Login, error) {
 	a.input = input
-	a.kind = input.Type
 	a.key = input.APIKey
-	return analysis.Login{Type: input.Type}, a.fail
+	return analysis.Login{OK: true}, a.fail
 }
 
 func TestProviderRequestsAndValidation(t *testing.T) {
 	auth := &fakeAuth{}
 	handler := New(Options{Auth: auth})
 	for _, body := range []string{
-		`{"type":"apiKey","apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"chosen-model"}`,
-		`{"type":"apiKey","source":"ccswitch"}`,
-		`{"type":"apiKey","source":"ccswitch","configDir":"C:/Users/test/.codex"}`,
+		`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"chosen-model"}`,
+		`{"apiKey":"test-only-secret","baseUrl":"http://127.0.0.1:9999/v1/responses","model":"chosen-model"}`,
 	} {
-		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -48,15 +45,15 @@ func TestProviderRequestsAndValidation(t *testing.T) {
 		}
 	}
 	for _, body := range []string{
-		`{"type":"apiKey","apiKey":"key","baseUrl":"file:///private","model":"m"}`,
-		`{"type":"apiKey","apiKey":"key","baseUrl":"https://user:password@example.com","model":"m"}`,
-		`{"type":"apiKey","apiKey":"key","baseUrl":"https://example.com?key=secret","model":"m"}`,
-		`{"type":"apiKey","apiKey":"key","baseUrl":"https://example.com"}`,
+		`{"apiKey":"key","baseUrl":"file:///private","model":"m"}`,
+		`{"apiKey":"key","baseUrl":"https://user:password@example.com","model":"m"}`,
+		`{"apiKey":"key","baseUrl":"https://example.com?key=secret","model":"m"}`,
+		`{"apiKey":"key","baseUrl":"https://example.com"}`,
 		`{"type":"chatgpt","baseUrl":"https://example.com","model":"m"}`,
 		`{"type":"apiKey","source":"ccswitch","apiKey":"mixed-secret"}`,
 		`{"type":"apiKey","source":"unknown","apiKey":"key"}`,
 	} {
-		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -70,16 +67,16 @@ func (a *fakeAuth) Logout(context.Context) error { a.key = ""; return a.fail }
 func TestAuthEndpointsDoNotEchoSecrets(t *testing.T) {
 	auth := &fakeAuth{}
 	handler := New(Options{Auth: auth})
-	r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(`{"type":"apiKey","apiKey":"test-only-secret"}`))
+	r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"m"}`))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
 	if w.Code != 200 || auth.key != "test-only-secret" || strings.Contains(w.Body.String(), auth.key) {
 		t.Fatalf("bad login response: %s", w.Body.String())
 	}
-	for _, path := range []string{"/api/codex/account", "/api/codex/logout"} {
+	for _, path := range []string{"/api/ai/config", "/api/ai/disconnect"} {
 		method := "GET"
-		if strings.HasSuffix(path, "logout") {
+		if strings.HasSuffix(path, "disconnect") {
 			method = "POST"
 		}
 		w = httptest.NewRecorder()
@@ -97,7 +94,7 @@ func TestInvalidLoginAndCrossOriginRequests(t *testing.T) {
 	auth := &fakeAuth{}
 	handler := New(Options{Auth: auth})
 	for _, body := range []string{`{}`, `{"type":"apiKey","apiKey":" "}`, `{"type":"chatgpt","apiKey":"secret"}`, `{"type":"apiKey","apiKey":"a","extra":true}`, `{"type":"apiKey","apiKey":"a"}{}`} {
-		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(body))
+		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, r)
@@ -105,7 +102,7 @@ func TestInvalidLoginAndCrossOriginRequests(t *testing.T) {
 			t.Fatalf("bad input accepted: %d", w.Code)
 		}
 	}
-	for _, path := range []string{"/api/codex/login", "/api/codex/logout", "/api/analyze"} {
+	for _, path := range []string{"/api/ai/connect", "/api/ai/disconnect", "/api/analyze"} {
 		r := httptest.NewRequest("POST", "http://127.0.0.1:8080"+path, strings.NewReader(`{}`))
 		r.Header.Set("Origin", "https://unrelated.example")
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
@@ -116,7 +113,7 @@ func TestInvalidLoginAndCrossOriginRequests(t *testing.T) {
 		}
 	}
 	w := httptest.NewRecorder()
-	New(Options{Auth: auth, LocalOnly: true}).ServeHTTP(w, httptest.NewRequest("GET", "http://unrelated.example/api/codex/account", nil))
+	New(Options{Auth: auth, LocalOnly: true}).ServeHTTP(w, httptest.NewRequest("GET", "http://unrelated.example/api/ai/config", nil))
 	if w.Code != http.StatusForbidden {
 		t.Fatal("non-local host accepted")
 	}
@@ -132,7 +129,7 @@ func TestConnectionValidationErrorsReachBrowserWithoutUpstreamDetails(t *testing
 		{context.Canceled, http.StatusRequestTimeout},
 	} {
 		auth := &fakeAuth{fail: &analysis.ConnectionError{Message: "连接验证失败，请检查配置后重试", Cause: tt.cause}}
-		r := httptest.NewRequest("POST", "/api/codex/login", strings.NewReader(`{"type":"apiKey","apiKey":"test-only-secret"}`))
+		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"m"}`))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		New(Options{Auth: auth}).ServeHTTP(w, r)
@@ -154,9 +151,9 @@ func TestAnalysisErrorsHaveUsefulStatusWithoutUpstreamSecrets(t *testing.T) {
 		status int
 		code   string
 	}{
-		{analysis.ErrLoginRequired, 401, "codex_login_required"}, {analysis.ErrBusy, 409, "codex_busy"},
-		{analysis.ErrUnavailable, 503, "codex_unavailable"}, {context.DeadlineExceeded, 504, "codex_timeout"},
-		{errors.New("upstream leaked-key-example"), 502, "codex_failed"},
+		{analysis.ErrLoginRequired, 401, "ai_config_required"}, {analysis.ErrBusy, 409, "ai_busy"},
+		{analysis.ErrUnavailable, 503, "ai_unavailable"}, {context.DeadlineExceeded, 504, "ai_timeout"},
+		{errors.New("upstream leaked-key-example"), 502, "ai_failed"},
 	} {
 		r := httptest.NewRequest("POST", "/api/analyze", strings.NewReader(`{"schemaVersion":1,"fileName":"test.xlsx","fields":[{"id":"f1","label":"任意字段","value":null,"sheet":"S","cell":"B2"}]}`))
 		r.Header.Set("Content-Type", "application/json")
