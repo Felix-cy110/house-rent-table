@@ -1,17 +1,17 @@
 package analysis
 
 import (
-	"net/url"
 	"strings"
 	"unicode"
+
+	"github.com/Felix-cy110/house-rent-table/internal/modelconfig"
 )
 
-// LoginRequest configures a direct, OpenAI-compatible HTTP API connection.
+// LoginRequest selects one fixed provider; URL and model overrides are rejected.
 // Secrets only travel from the browser to the server, never in response objects.
 type LoginRequest struct {
-	APIKey  string `json:"apiKey,omitempty"`
-	BaseURL string `json:"baseUrl,omitempty"`
-	Model   string `json:"model,omitempty"`
+	APIKey   string `json:"apiKey,omitempty"`
+	Provider string `json:"provider"`
 }
 
 // ConfigError contains a safe, locally authored message, never a parser or upstream error.
@@ -30,20 +30,12 @@ func (e *ConnectionError) Unwrap() error { return e.Cause }
 
 func (r *LoginRequest) Validate() error {
 	r.APIKey = strings.TrimSpace(r.APIKey)
-	r.BaseURL = strings.TrimRight(strings.TrimSpace(r.BaseURL), "/")
-	r.Model = strings.TrimSpace(r.Model)
+	r.Provider = strings.TrimSpace(r.Provider)
 	if r.APIKey == "" || len(r.APIKey) > 8192 || strings.IndexFunc(r.APIKey, unicode.IsControl) >= 0 {
 		return &ConfigError{"请填写有效的 API Key"}
 	}
-	if r.Model == "" || len(r.Model) > 256 || strings.IndexFunc(r.Model, unicode.IsControl) >= 0 {
-		return &ConfigError{"请填写有效的模型名称"}
-	}
-	if r.BaseURL == "" {
-		return &ConfigError{"请填写 API URL"}
-	}
-	u, err := url.Parse(r.BaseURL)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || len(r.BaseURL) > 2048 {
-		return &ConfigError{"API 地址必须是 HTTP(S) 基础地址，不能包含账号、查询参数或片段"}
+	if _, ok := modelconfig.Lookup(r.Provider); !ok {
+		return &ConfigError{"请选择 MiMo、GLM 或 DeepSeek 的受支持模型"}
 	}
 	return nil
 }

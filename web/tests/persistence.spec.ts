@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { file } from './xlsx';
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, provider: 'mimo', model: 'mimo-v2.6-flash', name: 'MiMo v2.6-Flash' } }));
   await page.route('**/api/persistence', route => route.fulfill({ json: { enabled: true } }));
 });
 

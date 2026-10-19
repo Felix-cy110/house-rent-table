@@ -23,7 +23,7 @@ body:
       label: 问题发生在哪个部分？
       options:
         - Excel 模板、下载或导入
-        - API Key、模型或接口 URL 配置
+        - 模型选择、API Key 或连接验证
         - AI 分析、费用计算或报告
         - MySQL 持久化或中介反馈
         - 页面显示或交互
@@ -41,8 +41,7 @@ body:
         操作系统与版本：
         浏览器与版本：
         Go / Node.js 版本：
-        接口协议（Chat Completions / Responses，如涉及）：
-        供应商和模型（如涉及，不填写 Key）：
+        选择的模型（MiMo / GLM / DeepSeek，如涉及，不填写 Key）：
         MySQL 版本（如涉及）：
         启动方式或命令：
     validations:

@@ -1,4 +1,4 @@
-import type { AnalysisResult, ImportResult, APIAccount, APIConnection, PersistenceReceipt, PersistenceStatus, BrokerFeedback } from './types';
+import type { ModelProvider, AnalysisResult, ImportResult, APIAccount, APIConnection, PersistenceReceipt, PersistenceStatus, BrokerFeedback } from './types';
 
 export class APIError extends Error {
   constructor(public code: string, message: string) {
@@ -60,4 +60,8 @@ export async function login(connection: APIConnection): Promise<{ ok: boolean }>
 
 export async function logout(): Promise<void> {
   await readResponse(await fetch('/api/ai/disconnect', { method: 'POST' }));
+}
+
+export async function models(): Promise<ModelProvider[]> {
+  return (await readResponse<{ providers: ModelProvider[] }>(await fetch('/api/ai/models'))).providers;
 }

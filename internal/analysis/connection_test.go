@@ -2,21 +2,16 @@ package analysis
 
 import "testing"
 
-func TestDirectConnectionRequiresKeyModelAndURL(t *testing.T) {
-	for _, input := range []LoginRequest{
-		{}, {APIKey: "key", Model: "m"}, {APIKey: "key", BaseURL: "https://example.com/v1"},
-		{APIKey: "key\nheader", BaseURL: "https://example.com/v1", Model: "m"},
-		{APIKey: "key", BaseURL: "https://user:password@example.com/v1", Model: "m"},
-		{APIKey: "key", BaseURL: "https://example.com/v1?key=secret", Model: "m"},
-		{APIKey: "key", BaseURL: "https://example.com/v1#secret", Model: "m"},
-		{APIKey: "key", BaseURL: "file:///private", Model: "m"},
-	} {
+func TestConnectionRequiresSupportedProviderAndKey(t *testing.T) {
+	for _, input := range []LoginRequest{{}, {APIKey: "key"}, {Provider: "mimo"}, {Provider: "other", APIKey: "key"}, {Provider: "glm", APIKey: "key\nheader"}} {
 		if input.Validate() == nil {
-			t.Errorf("invalid input accepted: model=%q", input.Model)
+			t.Error("invalid configuration accepted")
 		}
 	}
-	input := LoginRequest{APIKey: " key ", BaseURL: " https://example.com/v1/ ", Model: " m "}
-	if err := input.Validate(); err != nil || input.APIKey != "key" || input.BaseURL != "https://example.com/v1" || input.Model != "m" {
-		t.Fatal("valid connection not normalized")
+	for _, provider := range []string{"mimo", "glm", "deepseek"} {
+		input := LoginRequest{Provider: " " + provider + " ", APIKey: " key "}
+		if input.Validate() != nil || input.Provider != provider || input.APIKey != "key" {
+			t.Error("valid configuration not normalized")
+		}
 	}
 }

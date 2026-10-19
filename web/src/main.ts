@@ -208,7 +208,7 @@ function renderAnalysis(result: AnalysisResult, doc: RentalDocument) {
   });
   const actions = textElement('div', '', 'analysis-action');
   actions.append(reportButton);
-  analysisContent.replaceChildren(renderReport(result.text, result.citations), actions, feedbackStatus);
+  analysisContent.replaceChildren(renderReport(result.text, result.citations, result.sources, result.warnings), actions, feedbackStatus);
 }
 
 fileInput.addEventListener('change', () => {

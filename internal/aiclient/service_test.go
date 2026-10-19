@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Felix-cy110/house-rent-table/internal/modelconfig"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,15 +24,27 @@ func chatReply(w http.ResponseWriter, text, finish string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"model": "actual-model", "choices": []any{map[string]any{"finish_reason": finish, "message": map[string]string{"role": "assistant", "content": text}}}})
 }
 
-func connectedService(t *testing.T, handler http.HandlerFunc, responses bool) (*Service, analysis.LoginRequest) {
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func clientFor(server *httptest.Server) *http.Client {
+	target, _ := url.Parse(server.URL)
+	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		clone := r.Clone(r.Context())
+		copyURL := *r.URL
+		copyURL.Scheme = target.Scheme
+		copyURL.Host = target.Host
+		clone.URL = &copyURL
+		return http.DefaultTransport.RoundTrip(clone)
+	})}
+}
+func connectedService(t *testing.T, handler http.HandlerFunc, provider string) (*Service, analysis.LoginRequest) {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	input := analysis.LoginRequest{APIKey: "test-only-key", BaseURL: server.URL + "/v1", Model: "selected-model"}
-	if responses {
-		input.BaseURL += "/responses"
-	}
-	s := New(Options{ConfigDir: t.TempDir()})
+	input := analysis.LoginRequest{APIKey: "test-only-key", Provider: provider}
+	s := New(Options{ConfigDir: t.TempDir(), HTTPClient: clientFor(server)})
 	if _, err := s.Login(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +55,11 @@ func TestConnectionProbePersistenceRecoveryAndClear(t *testing.T) {
 	var calls atomic.Int32
 	s, input := connectedService(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
+		if r.Header.Get("Authorization") == "Bearer wrong-key" {
+			w.WriteHeader(401)
+			_, _ = w.Write([]byte(`{"error":"wrong-key and upstream-secret"}`))
+			return
+		}
 		if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer test-only-key" {
 			t.Error("wrong request endpoint or key")
 		}
@@ -50,14 +69,14 @@ func TestConnectionProbePersistenceRecoveryAndClear(t *testing.T) {
 			Tools    []any
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Model != "selected-model" || len(body.Tools) != 0 || len(body.Messages) != 2 || *body.Messages[1].Content != "Reply with OK." {
+		if body.Model != "mimo-v2.6-flash" || len(body.Tools) != 0 || len(body.Messages) != 2 || *body.Messages[1].Content != "Reply with OK." {
 			t.Error("probe contains tools or wrong model/input")
 		}
 		chatReply(w, "OK", "stop")
-	}, false)
+	}, "mimo")
 	status, err := s.Account(context.Background())
 	raw, _ := json.Marshal(status)
-	if err != nil || !status.Connected || status.BaseURL != input.BaseURL || status.Model != input.Model || strings.Contains(string(raw), input.APIKey) {
+	if err != nil || !status.Connected || status.Provider != input.Provider || status.Model != "mimo-v2.6-flash" || strings.Contains(string(raw), input.APIKey) {
 		t.Fatalf("unsafe account: %s %v", raw, err)
 	}
 	if calls.Load() != 1 {
@@ -74,14 +93,7 @@ func TestConnectionProbePersistenceRecoveryAndClear(t *testing.T) {
 		t.Fatal("configuration did not survive restart")
 	}
 	bad := input
-	bad.APIKey, bad.Model = "wrong-key", "invalid-model"
-	// Return a failed status for this candidate without touching the old service.
-	failed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(401)
-		_, _ = w.Write([]byte(`{"error":"wrong-key and upstream-secret"}`))
-	}))
-	defer failed.Close()
-	bad.BaseURL = failed.URL
+	bad.APIKey = "wrong-key"
 	_, err = s.Login(context.Background(), bad)
 	var connectionError *analysis.ConnectionError
 	if !errors.As(err, &connectionError) || !strings.Contains(err.Error(), "Key 无效") || strings.Contains(err.Error(), "wrong-key") || strings.Contains(err.Error(), "upstream-secret") {
@@ -92,14 +104,14 @@ func TestConnectionProbePersistenceRecoveryAndClear(t *testing.T) {
 		t.Fatal("failed connection replaced saved configuration")
 	}
 	status, _ = s.Account(context.Background())
-	if status.Model != input.Model || status.BaseURL != input.BaseURL {
+	if status.Model != "mimo-v2.6-flash" || status.Provider != input.Provider {
 		t.Fatal("failed connection changed live configuration")
 	}
 	if _, err := s.Login(context.Background(), input); err != nil {
 		t.Fatalf("could not replace existing configuration: %v", err)
 	}
 	status, err = New(Options{ConfigDir: s.opts.ConfigDir}).Account(context.Background())
-	if err != nil || !status.Connected || status.BaseURL != input.BaseURL || status.Model != input.Model {
+	if err != nil || !status.Connected || status.Provider != input.Provider || status.Model != "mimo-v2.6-flash" {
 		t.Fatal("replaced configuration did not survive restart")
 	}
 	if err := restored.Logout(context.Background()); err != nil {
@@ -131,7 +143,7 @@ func TestChatCalculationRoundTripAndUnchangedPayload(t *testing.T) {
 			chatReply(w, "OK", "stop")
 			return
 		}
-		if len(body.Tools) != 1 || body.Model != "selected-model" || *body.Messages[1].Content != string(payload) || !strings.Contains(*body.Messages[0].Content, "当前接口未提供联网搜索") {
+		if len(body.Tools) != 2 || body.Model != "mimo-v2.6-flash" || *body.Messages[1].Content != string(payload) || !strings.Contains(*body.Messages[0].Content, "联网核价必须使用") {
 			t.Error("analysis lost input, rules, tools or model")
 		}
 		if rounds.Add(1) == 1 {
@@ -143,91 +155,37 @@ func TestChatCalculationRoundTripAndUnchangedPayload(t *testing.T) {
 			t.Errorf("missing exact tool result: %+v", last)
 		}
 		chatReply(w, "  付款 11200.30 元\n\n未能核实市价。  ", "stop")
-	}, false)
+	}, "mimo")
 	result, err := s.Analyze(context.Background(), payload)
 	if err != nil || result.Text != "  付款 11200.30 元\n\n未能核实市价。  " || rounds.Load() != 2 {
 		t.Fatalf("analysis: %+v %v", result, err)
 	}
 }
 
-func TestResponsesToolRoundTripAndSearch(t *testing.T) {
-	var rounds atomic.Int32
-	s, _ := connectedService(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/responses" {
-			t.Error("wrong responses endpoint")
-		}
-		var body struct {
-			Model, Instructions string
-			Store               bool
-			Input               []json.RawMessage
-			Tools               []struct{ Type string }
-		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil {
-			t.Error("invalid request")
-		}
-		if body.Store || body.Model != "selected-model" {
-			t.Error("wrong model or storage")
-		}
-		if len(body.Tools) == 0 {
-			_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}`))
-			return
-		}
-		if len(body.Tools) != 2 || body.Tools[0].Type != "web_search" || !strings.Contains(body.Instructions, "产品提示规则") {
-			t.Error("missing search/function/rules")
-		}
-		if rounds.Add(1) == 1 {
-			_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"reasoning","id":"reasoning-1","summary":[]},{"type":"function_call","call_id":"calc-1","name":"rental_calculate","arguments":"{\"calculations\":[{\"label\":\"精度\",\"expression\":\"0.1+0.2\"}]}"}]}`))
-			return
-		}
-		joined, _ := json.Marshal(body.Input)
-		if !strings.Contains(string(joined), "reasoning-1") || !strings.Contains(string(joined), "function_call_output") || !strings.Contains(string(joined), "0.30") {
-			t.Error("responses continuation lost tool result or reasoning")
-		}
-		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","status":"completed","content":[{"type":"output_text","text":"费用 0.30 元。"},{"type":"output_text","text":"参考价🏠[来源]","annotations":[{"type":"url_citation","title":"收费公示","url":"https://example.com/fees","start_index":4,"end_index":8},{"type":"url_citation","url":"https://example.com/invalid","start_index":-1,"end_index":90}]}]}]}`))
-	}, true)
-	result, err := s.Analyze(context.Background(), json.RawMessage(`{"fields":[]}`))
-	if err != nil || result.Text != "费用 0.30 元。\n\n参考价🏠[来源]" || rounds.Load() != 2 {
-		t.Fatalf("responses: %+v %v", result, err)
-	}
-	if len(result.Citations) != 1 || result.Citations[0].StartIndex != 16 || result.Citations[0].EndIndex != 20 || result.Citations[0].URL != "https://example.com/fees" {
-		t.Fatalf("citation offsets lost across Unicode text parts: %+v", result.Citations)
-	}
-}
-
 func TestExtractionUsesIndependentStructuredRequest(t *testing.T) {
-	for _, responses := range []bool{false, true} {
-		t.Run(map[bool]string{false: "chat", true: "responses"}[responses], func(t *testing.T) {
-			input := extraction.Input{Document: document.Document{SchemaVersion: 1, FileName: "test.xlsx", Fields: []document.Field{{ID: "f1", Label: "月租", Value: nil, Sheet: "S", Cell: "B2"}}}}
+	for _, provider := range modelconfig.All() {
+		t.Run(provider.ID, func(t *testing.T) {
+			input := extraction.Input{Document: document.Document{SchemaVersion: 1, FileName: "test.xlsx", Fields: []document.Field{{ID: "f1", Label: "月租", Sheet: "S", Cell: "B2"}}}}
 			s, _ := connectedService(t, func(w http.ResponseWriter, r *http.Request) {
 				var body map[string]json.RawMessage
 				_ = json.NewDecoder(r.Body).Decode(&body)
-				structured := len(body["response_format"]) != 0 || len(body["text"]) != 0
-				if !structured {
-					if responses {
-						_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"OK"}]}]}`))
-					} else {
-						chatReply(w, "OK", "stop")
-					}
+				assertThinking(t, provider.ID, body)
+				if len(body["response_format"]) == 0 {
+					chatReply(w, "OK", "stop")
 					return
 				}
-				if len(body["tools"]) != 0 {
-					t.Error("extraction inherited review tools")
+				if len(body["tools"]) != 0 || !strings.Contains(string(body["response_format"]), "json_object") {
+					t.Error("unexpected extraction format/tools")
 				}
-				raw, _ := json.Marshal(body)
-				if !strings.Contains(string(raw), "lease_months") || !strings.Contains(string(raw), "default_currency") || strings.Contains(string(raw), "本次租金溢价容忍值") {
-					t.Error("wrong extraction schema/input/rules")
+				if !strings.Contains(string(body["messages"]), "lease_months") || !strings.Contains(string(body["messages"]), "default_currency") || strings.Contains(string(body["messages"]), "本次租金溢价容忍值") {
+					t.Error("lost schema, input or independent instructions")
 				}
-				if responses {
-					_, _ = w.Write([]byte(`{"model":"actual-extractor","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"version\":1}"}]}]}`))
-				} else {
-					chatReply(w, `{"version":1}`, "stop")
-				}
-			}, responses)
-			// A report may own the gate while extraction proceeds independently.
+				chatReply(w, `{"version":1}`, "stop")
+			}, provider.ID)
 			s.gate <- struct{}{}
 			defer func() { <-s.gate }()
 			out, err := s.Extract(context.Background(), input)
-			if err != nil || string(out.JSON) != `{"version":1}` || out.Provider == "" || out.Model == "" {
+			if err != nil || string(out.JSON) != `{"version":1}` || out.Provider != provider.ID || out.Model != "actual-model" {
 				t.Fatalf("extraction: %+v %v", out, err)
 			}
 		})
@@ -246,12 +204,8 @@ func TestIncompleteMalformedAndRefusedRepliesAreRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(response)) }))
 			defer server.Close()
-			base := server.URL
-			if strings.Contains(name, "responses") {
-				base += "/responses"
-			}
-			s := New(Options{ConfigDir: t.TempDir()})
-			_, err := s.Login(context.Background(), analysis.LoginRequest{APIKey: "test-only-key", BaseURL: base, Model: "m"})
+			s := New(Options{ConfigDir: t.TempDir(), HTTPClient: clientFor(server)})
+			_, err := s.Login(context.Background(), analysis.LoginRequest{APIKey: "test-only-key", Provider: "mimo"})
 			if err == nil || strings.Contains(err.Error(), "test-only-key") {
 				t.Fatalf("accepted incomplete/unsafe reply: %v", err)
 			}
@@ -275,7 +229,7 @@ func TestCancellationAndMutualExclusion(t *testing.T) {
 		close(started)
 		<-r.Context().Done()
 		close(stopped)
-	}, false)
+	}, "mimo")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -321,8 +275,8 @@ func TestRedirectDoesNotForwardCredentials(t *testing.T) {
 		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
 	}))
 	defer redirect.Close()
-	s := New(Options{ConfigDir: t.TempDir()})
-	_, err := s.Login(context.Background(), analysis.LoginRequest{APIKey: "test-only-key", BaseURL: redirect.URL, Model: "m"})
+	s := New(Options{ConfigDir: t.TempDir(), HTTPClient: clientFor(redirect)})
+	_, err := s.Login(context.Background(), analysis.LoginRequest{APIKey: "test-only-key", Provider: "glm"})
 	if err == nil || forwarded.Load() != 0 {
 		t.Fatal("redirect forwarded credentials or accepted as connected")
 	}

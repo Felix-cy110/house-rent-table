@@ -10,9 +10,13 @@ import (
 	"time"
 
 	"github.com/Felix-cy110/house-rent-table/internal/analysis"
+	"github.com/Felix-cy110/house-rent-table/internal/modelconfig"
 )
 
 func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
+	mux.HandleFunc("GET /api/ai/models", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"providers": modelconfig.All()})
+	})
 	wrap := func(timeout time.Duration, action func(http.ResponseWriter, *http.Request)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if auth == nil {
@@ -32,7 +36,7 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 		}
 		writeJSON(w, http.StatusOK, account)
 	}))
-	mux.HandleFunc("POST /api/ai/connect", wrap(60*time.Second, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/ai/connect", wrap(120*time.Second, func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/json" {
 			writeError(w, 415, "invalid_content_type", "请使用 JSON 提交 API 配置")
@@ -43,7 +47,7 @@ func registerAuth(mux *http.ServeMux, auth analysis.Authenticator) {
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
-			writeError(w, http.StatusBadRequest, "invalid_connection", "请填写有效的 API Key、模型和 URL")
+			writeError(w, http.StatusBadRequest, "invalid_connection", "请选择受支持的模型并填写 API Key；不接受自定义 URL 或模型名")
 			return
 		}
 		if err := input.Validate(); err != nil {
@@ -85,7 +89,7 @@ func writeAgentError(w http.ResponseWriter, err error) {
 	}
 	switch {
 	case errors.Is(err, analysis.ErrLoginRequired):
-		writeError(w, 401, "ai_config_required", "请先配置 API Key、模型和 URL，再发送并分析")
+		writeError(w, 401, "ai_config_required", "请先选择模型并配置 API Key，再发送并分析")
 	case errors.Is(err, analysis.ErrUnavailable):
 		writeError(w, 503, "ai_unavailable", "无法读取 API 配置，请重新填写并保存，或检查服务配置目录")
 	case errors.Is(err, analysis.ErrBusy):

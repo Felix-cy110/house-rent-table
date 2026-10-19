@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('导入动态项目、区分空白与零、未配置时给出明确提示', async ({ page }) => {
-  await page.route('**/api/analyze', route => route.fulfill({ status: 401, json: { error: { code: 'ai_config_required', message: '请先配置 API Key、模型和 URL，再发送并分析' } } }));
+  await page.route('**/api/analyze', route => route.fulfill({ status: 401, json: { error: { code: 'ai_config_required', message: '请先选择模型并配置 API Key，再发送并分析' } } }));
   await page.goto('/');
   await page.screenshot({ path: 'test-results/desktop-empty.png', fullPage: true });
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([
@@ -21,7 +21,7 @@ test('导入动态项目、区分空白与零、未配置时给出明确提示',
   const response = page.waitForResponse('**/api/analyze');
   await page.getByRole('button', { name: '发送并分析' }).click();
   expect((await response).status()).toBe(401);
-  await expect(page.getByText('请先配置 API Key、模型和 URL，再发送并分析', { exact: true })).toBeVisible();
+  await expect(page.getByText('请先选择模型并配置 API Key，再发送并分析', { exact: true })).toBeVisible();
   await expect(page.locator('.ai-response')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/desktop-imported.png', fullPage: true });
   await page.getByRole('button', { name: '清空', exact: true }).click();

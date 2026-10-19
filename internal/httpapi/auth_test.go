@@ -31,8 +31,8 @@ func TestProviderRequestsAndValidation(t *testing.T) {
 	auth := &fakeAuth{}
 	handler := New(Options{Auth: auth})
 	for _, body := range []string{
-		`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"chosen-model"}`,
-		`{"apiKey":"test-only-secret","baseUrl":"http://127.0.0.1:9999/v1/responses","model":"chosen-model"}`,
+		`{"apiKey":"test-only-secret","provider":"mimo"}`,
+		`{"apiKey":"test-only-secret","provider":"deepseek"}`,
 	} {
 		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
@@ -45,6 +45,9 @@ func TestProviderRequestsAndValidation(t *testing.T) {
 		}
 	}
 	for _, body := range []string{
+		`{"apiKey":"key","provider":"mimo","baseUrl":"https://evil.example"}`,
+		`{"apiKey":"key","provider":"glm","model":"arbitrary"}`,
+		`{"apiKey":"key","provider":"unsupported"}`,
 		`{"apiKey":"key","baseUrl":"file:///private","model":"m"}`,
 		`{"apiKey":"key","baseUrl":"https://user:password@example.com","model":"m"}`,
 		`{"apiKey":"key","baseUrl":"https://example.com?key=secret","model":"m"}`,
@@ -67,7 +70,7 @@ func (a *fakeAuth) Logout(context.Context) error { a.key = ""; return a.fail }
 func TestAuthEndpointsDoNotEchoSecrets(t *testing.T) {
 	auth := &fakeAuth{}
 	handler := New(Options{Auth: auth})
-	r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"m"}`))
+	r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","provider":"glm"}`))
 	r.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)
@@ -129,7 +132,7 @@ func TestConnectionValidationErrorsReachBrowserWithoutUpstreamDetails(t *testing
 		{context.Canceled, http.StatusRequestTimeout},
 	} {
 		auth := &fakeAuth{fail: &analysis.ConnectionError{Message: "连接验证失败，请检查配置后重试", Cause: tt.cause}}
-		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","baseUrl":"https://gateway.example/v1","model":"m"}`))
+		r := httptest.NewRequest("POST", "/api/ai/connect", strings.NewReader(`{"apiKey":"test-only-secret","provider":"glm"}`))
 		r.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		New(Options{Auth: auth}).ServeHTTP(w, r)
@@ -162,5 +165,27 @@ func TestAnalysisErrorsHaveUsefulStatusWithoutUpstreamSecrets(t *testing.T) {
 		if w.Code != tt.status || !strings.Contains(w.Body.String(), tt.code) || strings.Contains(w.Body.String(), "leaked-key-example") {
 			t.Fatalf("unexpected error: %d %s", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestFixedModelCatalogHidesEndpointsAndCredentials(t *testing.T) {
+	w := httptest.NewRecorder()
+	New(Options{}).ServeHTTP(w, httptest.NewRequest("GET", "/api/ai/models", nil))
+	var body struct {
+		Providers []struct {
+			ID, Model, VersionNote string
+			Thinking               bool
+		}
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &body) != nil || len(body.Providers) != 3 {
+		t.Fatal("model catalog unavailable")
+	}
+	for _, p := range body.Providers {
+		if !p.Thinking {
+			t.Fatal("thinking disabled in catalog")
+		}
+	}
+	if body.Providers[2].Model != "deepseek-flash" || !strings.Contains(body.Providers[2].VersionNote, "V4.1-Flash-1017") || strings.Contains(w.Body.String(), "https:") || strings.Contains(w.Body.String(), "apiKey") {
+		t.Fatal("unsafe or stale catalog")
 	}
 }

@@ -23,9 +23,21 @@ type Analyzer interface {
 type Result struct {
 	Text      string     `json:"text"`
 	Citations []Citation `json:"citations,omitempty"`
+	Sources   []Source   `json:"sources,omitempty"`
+	Warnings  []string   `json:"warnings,omitempty"`
 }
 
-// Citation indexes count Unicode code points in Text, as in Responses output.
+// Source is a retrieved page, not proof that every claim in the report is verified.
+// Vendors that omit citation offsets still contribute to this source list.
+type Source struct {
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	Site        string `json:"site,omitempty"`
+	PublishedAt string `json:"publishedAt,omitempty"`
+}
+
+// Citation indexes count Unicode code points in Text. Missing vendor offsets
+// contribute Sources instead; the adapter never invents citation positions.
 type Citation struct {
 	Title      string `json:"title"`
 	URL        string `json:"url"`
@@ -34,9 +46,11 @@ type Citation struct {
 }
 
 type Account struct {
-	Connected bool   `json:"connected"`
-	BaseURL   string `json:"baseUrl,omitempty"`
-	Model     string `json:"model,omitempty"`
+	Connected      bool   `json:"connected"`
+	Provider       string `json:"provider,omitempty"`
+	Name           string `json:"name,omitempty"`
+	Model          string `json:"model,omitempty"`
+	NeedsReconnect bool   `json:"needsReconnect,omitempty"`
 }
 
 type Login struct {

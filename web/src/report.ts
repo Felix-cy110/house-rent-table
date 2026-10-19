@@ -1,5 +1,5 @@
 import MarkdownIt from 'markdown-it';
-import type { Citation } from './types';
+import type { Citation, Source } from './types';
 
 // Reports come from a model and may quote untrusted cells or webpages. Render
 // Markdown tables and HTTP(S) sources, never embedded HTML or remote images.
@@ -42,7 +42,7 @@ function withCitations(text: string, citations: Citation[]): string {
   return rendered + points.slice(cursor).join('');
 }
 
-export function renderReport(text: string, citations: Citation[] = []): DocumentFragment {
+export function renderReport(text: string, citations: Citation[] = [], sources: Source[] = [], warnings: string[] = []): DocumentFragment {
   const fragment = document.createDocumentFragment();
   const report = document.createElement('div');
   report.className = 'review-report';
@@ -65,6 +65,35 @@ export function renderReport(text: string, citations: Citation[] = []): Document
   raw.className = 'ai-response';
   raw.textContent = text;
   details.append(summary, raw);
-  fragment.append(report, details);
+  fragment.append(report);
+  if (warnings.length) {
+    const notice = document.createElement('div');
+    notice.className = 'report-warnings';
+    notice.setAttribute('role', 'status');
+    for (const warning of warnings) { const p = document.createElement('p'); p.textContent = warning; notice.append(p); }
+    fragment.append(notice);
+  }
+  const valid = sources.filter(source => markdown.validateLink(source.url));
+  if (valid.length) {
+    const section = document.createElement('details');
+    section.className = 'report-sources';
+    const title = document.createElement('summary');
+    title.textContent = '本次检索来源（需核对适用范围）';
+    const list = document.createElement('ul');
+    for (const source of valid) {
+      const item = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = source.url;
+      link.textContent = source.title || source.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      item.append(link);
+      if (source.publishedAt) item.append(document.createTextNode(` · ${source.publishedAt}`));
+      list.append(item);
+    }
+    section.append(title, list);
+    fragment.append(section);
+  }
+  fragment.append(details);
   return fragment;
 }

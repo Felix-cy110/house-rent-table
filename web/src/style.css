@@ -2,7 +2,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 [hidden] { display: none !important; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button, a, label { -webkit-tap-highlight-color: transparent; }
 button { cursor: pointer; }
 a { color: #4c637f; text-decoration: none; }
@@ -77,7 +77,7 @@ summary { font-size: 12px; cursor: pointer; color: #526b88; }
 #key-form { width: 100%; min-width: 0; }
 #key-form { display: grid; gap: 8px; margin-top: 14px; max-width: 640px; }
 #key-form label { font-size: 14px; }
-#key-form input { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font: inherit; }
+#key-form input, #key-form select { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font: inherit; }
 #key-form button { justify-self: start; margin-top: 4px; }
 .connection-result { width: min(380px, calc(100% - 32px)); border: 1px solid #e1e6ec; border-radius: 12px; padding: 28px; color: #202c3a; text-align: center; overflow-wrap: anywhere; box-shadow: 0 16px 48px #202c3a26; }
 .connection-result::backdrop { background: #202c3a66; }
@@ -125,3 +125,6 @@ button:disabled { cursor: default; opacity: .6; }
   .primary-button { min-height: 42px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+.report-sources { margin-top: 16px; overflow-wrap: anywhere; }
+.report-warnings { color: #92400e; background: #fffbeb; padding: 12px 16px; border-radius: 8px; }
