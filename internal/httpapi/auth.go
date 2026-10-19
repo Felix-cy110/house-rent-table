@@ -92,6 +92,8 @@ func writeAgentError(w http.ResponseWriter, err error) {
 		writeError(w, 401, "ai_config_required", "请先选择模型并配置 API Key，再发送并分析")
 	case errors.Is(err, analysis.ErrUnavailable):
 		writeError(w, 503, "ai_unavailable", "无法读取 API 配置，请重新填写并保存，或检查服务配置目录")
+	case errors.Is(err, analysis.ErrSearchUnavailable):
+		writeError(w, 503, "search_unavailable", "MiMo 搜索插件未开通，且服务端未配置备用搜索；请联系维护者配置备用搜索，或在小米平台开通插件后重试")
 	case errors.Is(err, analysis.ErrBusy):
 		writeError(w, 409, "ai_busy", "AI 正在处理请求，请完成或取消后重试")
 	case errors.Is(err, context.DeadlineExceeded):

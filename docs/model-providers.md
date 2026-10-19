@@ -26,7 +26,7 @@ DeepSeek 官方模型表说明：旧 `deepseek-v4-flash` 名称仍接受，但�
 
 | 模型 | 实现 | 请求与响应差异 |
 | --- | --- | --- |
-| MiMo | 内置 `tools: [{type: web_search, max_keyword: 3}, ...]` | 用户需先开通 Web Search 插件；响应来源主要在 `choices[].message.annotations`，可能没有字符位置；`message.error_message` 表示搜索异常；可选 `usage.web_search_usage` 提供搜索次数和页数 |
+| MiMo | 优先内置 `tools: [{type: web_search, max_keyword: 3}, ...]`；插件未开通时可降级 `rental_web_search` | 插件要求先开通；备用搜索由服务端单独配置。响应来源主要在 `choices[].message.annotations`，可能没有字符位置；`message.error_message` 表示搜索异常；可选 `usage.web_search_usage` 提供搜索次数和页数 |
 | GLM | `rental_web_search` 函数 → `https://open.bigmodel.cn/api/paas/v4/web_search` | 同一 Key；请求为 `search_query`、`search_engine=search_pro`、`search_intent=false`、`count=5`、`content_size=high`；查询限制 70 字符；结果来自 `search_result`，使用 link/content/media/publish_date |
 | DeepSeek | `rental_web_search` 函数 → `https://api.deepseek.com/v1/tools/search` | 同一 Key；请求为 query/count=5/need_content=false；查询限制 128 个 Unicode 字符；结果来自 results，使用 url/summary/snippet/site_name/date |
 
@@ -36,7 +36,17 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
 
 搜索资料作为外部数据，明确要求忽略其中的指令；仅查询必要的区域、小区和费用项目，不把联系人或整份表格作为查询词。程序不自行访问返回页面 URL。结果链接仅接受不含账号密码的 HTTP(S)。模型仍负责语义筛选；搜索命中本身不代表房源可比或价格已经核实。
 
-独立搜索失败会回传固定、安全的工具错误并附报告提示，允许继续费用核算。没有来源时报告显示核实提醒。MiMo 整个模型请求因未开插件等原因失败时直接报错，不自动关闭搜索或切换模型。搜索可能单独计费；连接探测不测试搜索权限。
+独立搜索失败会回传固定、安全的工具错误并附报告提示，允许继续费用核算。没有来源时报告显示核实提醒。MiMo 插件明确未开通时按下述规则切换搜索后端，模型保持 MiMo；其他模型请求失败仍报错。搜索可能单独计费；连接探测不测试搜索权限。
+
+### MiMo 的服务端备用搜索
+
+- 维护者配置 `RENT_SEARCH_API_KEY` 和可选的 `RENT_SEARCH_PROVIDER`（`glm` / `deepseek`，只设置 Key 时默认 `glm`），由服务启动时加载。两者均空表示禁用；只设置 provider、未知 provider、过长或含控制字符的 Key 会以本地固定消息拒绝启动，错误不回显值。修改后重启服务。
+- 用户仍只提交 `{provider, apiKey}`。备用 Key 是对应搜索供应商的凭据，只发往其固定搜索端点；模型请求始终使用用户的 MiMo Key。备用凭据不写入用户的 `connection.json`，不通过配置/模型列表接口或模型消息返回。备用搜索费用由维护者账号承担。
+- MiMo 官方搜索文档要求先开通插件，但错误码文档没有列出专用的未开通代码，403 还可能代表地区或风控限制。本实现**没有假设专用代码**，只在 HTTP 400/403/422 的有界 JSON 错误、HTTP 200 顶层 `error` 或有效消息的 `error_message` 中同时识别搜索名称和明确的未开通文案，如 `Web Search plugin not activated` / `联网搜索插件未开通`。这些是协议测试用例，不是官方保证的固定错误格式；未知文案保持失败或原有搜索警告，需根据脱敏真实响应补充适配。
+- 不读取模型正文判断权限；401/402/429/5xx、普通 403、超时、取消、截断、拒绝回答和畸形消息均不触发切换。连接探测与后台提取没有工具，不使用备用搜索。
+- `NormalizedResponse.HostedSearchUnavailable` 只传递归一化的能力状态。共用工具循环在一次分析中最多切换一次：移除内置 `web_search`，注册备用供应商对应长度限制的 `rental_web_search`，仍使用 MiMo 模型和思考配置。下次分析重新尝试内置插件，不永久缓存权限状态。
+- 已完成的计算及思考上下文保留；搜索失败消息同轮携带有效函数调用时先完成这些调用，再续传。携带搜索错误的正文和来源丢弃并重新生成；明确插件错误伴随空/null 正文只视为失败尝试，不能作为最终报告。失败请求与切换后的请求共享 16 轮上限、8 次独立搜索上限和原分析超时；失败轮用量缺失时总量保留未知。
+- 报告提示已切换备用搜索；备用搜索本身失败时继续计算并标记市价未核实。未配置备用服务则返回安全的 `search_unavailable`（503），提示维护者配置或用户开通插件。不会把模型 Key 当备用 Key 尝试。
 
 ## 轻量归一化边界
 
@@ -48,7 +58,7 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
   → Analyze / Extract → HTTP / 页面 / 持久化
 ```
 
-`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。
+`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage，以及 HostedSearchUnavailable 能力状态。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。
 
 | 归一化内容 | 处理规则 |
 | --- | --- |
@@ -60,7 +70,7 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
 | 用量 | prompt/completion/total/reasoning/cached tokens 统一；DeepSeek 兼容顶层 prompt_cache_hit_tokens、prompt_cache_miss_tokens；MiMo 读取可选搜索计数；未知为 nil，明确的 0 保留为 0，不估算缺失数据 |
 | 多轮用量 | 只在相关轮次都提供计数时累加；缺任一轮则对应总量未知，防止把不完整统计当成全量；这不是费用计算器 |
 | 可选扩展 | model、usage、详情对象、来源和日期缺失/null 均可处理；无法识别的可选元数据忽略；未知扩展忽略。不可恢复的正文/思考/工具结构错误拒绝，不掩盖协议失败 |
-| 错误 | HTTP 错误和响应 error 统一失败，返回本地固定消息，不把供应商原始错误、Key 或请求内容回显 |
+| 错误 | 明确的 MiMo 插件未开通信号归一化为能力状态，由共用工具循环处理；其他 HTTP 错误和响应 error 统一失败。返回本地固定消息，不回显供应商原始错误、Key 或请求内容 |
 
 配置及密钥仅保存在本机配置文件，HTTP 重定向被拒绝。旧 `{apiKey,baseUrl,model}` 文件标记 needsReconnect；不按 URL 猜供应商，不复用旧 Key。用户显式重新连接成功后原子替换，失败保留旧文件；清除操作删除文件。
 
@@ -70,13 +80,14 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
 
 Excel 导入、字段原文和加粗目标、精确计算器、报告取消、独立后台队列及中介反馈流程继续使用原接口。提取仍不带搜索和计算工具，不加载主报告规则；与主报告分开快照配置、分开取消。provider 元数据从通用网关主机改为固定标识，历史数据不回填。此次没有数据库迁移。
 
-开启思考可能增加耗时和用量。连接探测超时由 30 秒调整为 90 秒；HTTP 接口外层为 120 秒，主分析仍受原有 5 分钟限制。搜索存在账号权限和费用差异，需用户在供应商侧开通。
+开启思考可能增加耗时和用量。连接探测超时由 30 秒调整为 90 秒；HTTP 接口外层为 120 秒，主分析仍受原有 5 分钟限制。搜索存在账号权限和费用差异，由模型账号或服务端备用搜索账号提供权限。
 
 ## 官方资料
 
 以下为本次实际读取的官方文档；无需用户 Key 即可查阅。网页内容可能随时间变更，以对应日期核对结果为准。
 
 - MiMo [Chat API](https://mimo.mi.com/static/docs/api/chat/openai-api.md)、[思考模式](https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/deep-thinking.md)、[联网搜索](https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/tool-calling/web-search.md)、[JSON 输出](https://mimo.mi.com/static/docs/quick-start/usage-guide/text-generation/structured-output.md)。
+- MiMo [错误码](https://mimo.mi.com/static/docs/api/guidance/error-codes.md)：未公开搜索插件未开通的专用代码；403 不等于插件未开通。
 - 智谱 [GLM 5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash.md)、[Chat API](https://docs.bigmodel.cn/api-reference/模型-api/对话补全.md)、[思考模式](https://docs.bigmodel.cn/cn/guide/capabilities/thinking-mode.md)、[独立搜索 API](https://docs.bigmodel.cn/api-reference/工具-api/网络搜索.md)、[JSON 输出](https://docs.bigmodel.cn/cn/guide/capabilities/struct-output.md)、[Responses 差异](https://docs.bigmodel.cn/cn/guide/develop/responses/introduction.md)。
 - DeepSeek [模型与别名](https://api-docs.deepseek.com/quick_start/pricing)、[2026-10-17 发布说明](https://api-docs.deepseek.com/news/news261017)、[Chat API](https://api-docs.deepseek.com/api/create-chat-completion)、[思考模式](https://api-docs.deepseek.com/guides/thinking_mode)、[Search API](https://api-docs.deepseek.com/guides/search)、[JSON 输出](https://api-docs.deepseek.com/guides/json_mode)。
 
@@ -85,3 +96,5 @@ Excel 导入、字段原文和加粗目标、精确计算器、报告取消、�
 Go 测试使用本地 HTTP 或注入传输，覆盖三家固定地址/模型/认证/思考设置、两种独立搜索请求、思考工具续传、来源差异、可选字段、usage 空值与零、错误终止、重连迁移和取消。浏览器通过 `e2e` 专属测试服务覆盖真实业务处理器、配置保存、上传、思考续传与计算器；生产程序不开放 URL 覆盖参数。
 
 2026-10-19：全量 Go 测试、go vet、构建、模板检查与 30 项 Playwright 测试通过。未使用真实供应商 Key，不把模拟验证写成真实服务联调；模型质量、账号搜索权限和实际用量仍需真实环境验证。未重新运行真实 MySQL 集成测试。
+
+同日补充 MiMo 降级验证：全量 Go 测试、go vet、前端构建、模板检查及 30 项浏览器测试通过。新增模拟覆盖两种备用供应商、HTTP/顶层 error/消息 error_message、空正文、同轮函数调用、已完成计算保留、两类密钥隔离、未配置提示、错误不误触发、失败来源丢弃、用量缺失、重复信号、轮数/搜索预算和取消。浏览器真实 Go 处理器通过隔离传输验证仅填写 MiMo Key 后完成计算、降级搜索、来源和提示展示；未使用真实凭据联调或修改实际 `.env`。

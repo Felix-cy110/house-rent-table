@@ -25,15 +25,16 @@ const (
 // NormalizedResponse is the only model response read by orchestration and
 // business services. Wire fields and reasoning stay in the private chat session.
 type NormalizedResponse struct {
-	Provider  string
-	Model     string
-	Text      string
-	Finish    Finish
-	ToolCalls []ToolCall
-	Sources   []analysis.Source
-	Citations []analysis.Citation
-	Warnings  []string
-	Usage     *Usage
+	Provider                string
+	Model                   string
+	Text                    string
+	Finish                  Finish
+	ToolCalls               []ToolCall
+	Sources                 []analysis.Source
+	Citations               []analysis.Citation
+	Warnings                []string
+	Usage                   *Usage
+	HostedSearchUnavailable bool
 }
 
 type ToolCall struct{ ID, Name, Arguments string }
@@ -125,7 +126,18 @@ func normalize(p modelconfig.Provider, raw json.RawMessage) (NormalizedResponse,
 		} `json:"choices"`
 	}
 	var message chatMessage
-	if json.Unmarshal(raw, &root) != nil || hasError(root.Error) || len(root.Choices) != 1 {
+	if json.Unmarshal(raw, &root) != nil {
+		return n, message, analysis.ErrFailed
+	}
+	if hasError(root.Error) {
+		if p.ID == "mimo" && len(root.Choices) == 0 && inactiveSearchError(root.Error) {
+			n.HostedSearchUnavailable = true
+			n.Usage = normalizeUsage(p.ID, root.Usage)
+			return n, message, nil
+		}
+		return n, message, analysis.ErrFailed
+	}
+	if len(root.Choices) != 1 {
 		return n, message, analysis.ErrFailed
 	}
 	choice := root.Choices[0]
@@ -181,11 +193,22 @@ func normalize(p modelconfig.Provider, raw json.RawMessage) (NormalizedResponse,
 	if hasError(m["refusal"]) && optionalString(m["refusal"]) == "" && string(m["refusal"]) != `""` {
 		n.Finish = Refused
 	}
-	if optionalString(m["error_message"]) != "" {
-		n.Warnings = append(n.Warnings, "联网搜索未完整完成，相关市价仍需核实。")
-	}
-	if n.Finish == Finished && (strings.TrimSpace(n.Text) == "" || len(n.ToolCalls) != 0) || n.Finish == NeedsTools && len(n.ToolCalls) == 0 {
+	if n.Finish == Finished && len(n.ToolCalls) != 0 || n.Finish == NeedsTools && len(n.ToolCalls) == 0 {
 		return n, message, analysis.ErrFailed
+	}
+	if searchError := optionalString(m["error_message"]); searchError != "" {
+		n.HostedSearchUnavailable = p.ID == "mimo" && (n.Finish == Finished || n.Finish == NeedsTools) && searchPluginInactive(searchError)
+		if !n.HostedSearchUnavailable {
+			n.Warnings = append(n.Warnings, "联网搜索未完整完成，相关市价仍需核实。")
+		}
+	}
+	if n.Finish == Finished && strings.TrimSpace(n.Text) == "" {
+		if !n.HostedSearchUnavailable {
+			return n, message, analysis.ErrFailed
+		}
+		// A plugin error can arrive without a generated answer. Treat it as a
+		// failed search attempt eligible for fallback, never a completed report.
+		n.Finish = Failed
 	}
 	for _, item := range optionalArray(m["annotations"]) {
 		a := optionalObject(item)

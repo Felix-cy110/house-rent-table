@@ -143,7 +143,7 @@ test('分析失败可重试，取消后旧回复不会覆盖新分析', async ({
   await expect(page.locator('.ai-response')).toHaveText('最新回复');
 });
 
-test('真实 Go 服务通过隔离传输完成配置、思考续传、核算与来源展示', async ({ page }) => {
+test('真实 Go 服务完成 MiMo 配置、核算、搜索降级与来源展示', async ({ page }) => {
   try {
     await page.goto('/');
     await page.getByLabel('模型', { exact: true }).selectOption('mimo');
@@ -155,6 +155,8 @@ test('真实 Go 服务通过隔离传输完成配置、思考续传、核算与�
     await page.getByRole('button', { name: '发送并分析' }).click();
     await expect(page.locator('.review-report')).toContainText('8000.00 元');
     await expect(page.locator('body')).not.toContainText('fixture-private-thinking');
+    await expect(page.locator('body')).not.toContainText('local-search-only-key');
+    await expect(page.locator('.report-warnings')).toContainText('已切换到服务端备用搜索');
     await page.locator('.report-sources summary').click();
     await expect(page.getByRole('link', { name: '测试公示' })).toHaveAttribute('href', 'https://example.com/fees');
     await page.reload();

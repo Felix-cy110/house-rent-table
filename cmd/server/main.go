@@ -37,7 +37,11 @@ func main() {
 	if err != nil || (host != "localhost" && (net.ParseIP(host) == nil || !net.ParseIP(host).IsLoopback())) {
 		log.Fatal("本轮仅支持本机单用户运行，请使用 127.0.0.1 或 localhost 监听地址")
 	}
-	agent := aiclient.New(aiclient.Options{ConfigDir: *aiConfigDir, RentPremiumTolerance: rentTolerance})
+	fallback, err := aiclient.NewSearchFallback(os.Getenv("RENT_SEARCH_PROVIDER"), os.Getenv("RENT_SEARCH_API_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	agent := aiclient.New(aiclient.Options{ConfigDir: *aiConfigDir, RentPremiumTolerance: rentTolerance, SearchFallback: fallback})
 	var background *persistence.Worker
 	var feedbackStore httpapi.BrokerFeedbackStore
 	var defaultCurrency *string

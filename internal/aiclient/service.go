@@ -26,6 +26,7 @@ type Options struct {
 	ConfigDir            string
 	HTTPClient           *http.Client
 	RentPremiumTolerance *int
+	SearchFallback       SearchFallback
 }
 
 type Service struct {

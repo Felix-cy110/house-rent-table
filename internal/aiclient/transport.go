@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -22,7 +23,10 @@ const maxSearchCalls = 8
 const searchToolName = "rental_web_search"
 
 // apiError never contains upstream text, URLs or credentials.
-type apiError struct{ status int }
+type apiError struct {
+	status            int
+	searchUnavailable bool
+}
 
 func (e *apiError) Error() string {
 	switch e.status {
@@ -63,7 +67,18 @@ func (s *Service) post(ctx context.Context, key, address string, body any) (json
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &apiError{status: resp.StatusCode}
+		failure := &apiError{status: resp.StatusCode}
+		if resp.StatusCode == 400 || resp.StatusCode == 403 || resp.StatusCode == 422 {
+			const maxErrorBytes = 16 << 10
+			raw, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes+1))
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if err == nil && len(raw) <= maxErrorBytes && json.Valid(raw) {
+				failure.searchUnavailable = inactiveSearchEnvelope(raw)
+			}
+		}
+		return nil, failure
 	}
 	raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
@@ -81,17 +96,18 @@ func (s *Service) post(ctx context.Context, key, address string, body any) (json
 // chatSession owns vendor encoding and continuation. No business code reads
 // choices, reasoning_content, annotations, web_search or vendor usage fields.
 type chatSession struct {
-	provider modelconfig.Provider
-	messages []chatMessage
-	schema   json.RawMessage
-	tools    bool
+	provider       modelconfig.Provider
+	searchProvider modelconfig.Provider
+	messages       []chatMessage
+	schema         json.RawMessage
+	tools          bool
 }
 
 func newSession(p modelconfig.Provider, instructions, input string, schema json.RawMessage, tools bool) *chatSession {
 	if schema != nil {
 		instructions += "\n只输出符合以下 JSON Schema 的 JSON 对象，不加 Markdown 围栏；未知值按结构要求用 null，不编造字段：\n" + string(schema)
 	}
-	return &chatSession{provider: p, messages: []chatMessage{{Role: "system", Content: &instructions}, {Role: "user", Content: &input}}, schema: schema, tools: tools}
+	return &chatSession{provider: p, searchProvider: p, messages: []chatMessage{{Role: "system", Content: &instructions}, {Role: "user", Content: &input}}, schema: schema, tools: tools}
 }
 func (session *chatSession) request() map[string]any {
 	body := map[string]any{"model": session.provider.Model, "messages": session.messages, "stream": false, "thinking": map[string]any{"type": "enabled"}}
@@ -107,13 +123,13 @@ func (session *chatSession) request() map[string]any {
 	}
 	if session.tools {
 		specs := []any{functionSpec()}
-		switch session.provider.ID {
+		switch session.searchProvider.ID {
 		case "mimo":
 			specs = append(specs, map[string]any{"type": "web_search", "max_keyword": 3})
 		case "glm", "deepseek":
 			specs = append(specs, map[string]any{"type": "function", "function": map[string]any{
 				"name": searchToolName, "description": "搜索实时公开网页核验租金、物业、水电等费用。只发送小区、区域和费用项目，禁止联系人、电话、门牌房号或整份表格。遵守参数中的搜索词长度限制。",
-				"parameters": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string", "minLength": 1, "maxLength": session.provider.SearchQueryLimit}}, "required": []string{"query"}, "additionalProperties": false},
+				"parameters": map[string]any{"type": "object", "properties": map[string]any{"query": map[string]any{"type": "string", "minLength": 1, "maxLength": session.searchProvider.SearchQueryLimit}}, "required": []string{"query"}, "additionalProperties": false},
 			}})
 		}
 		body["tools"] = specs
@@ -123,6 +139,10 @@ func (session *chatSession) request() map[string]any {
 func (session *chatSession) next(ctx context.Context, s *Service, key string) (NormalizedResponse, error) {
 	raw, err := s.post(ctx, key, session.provider.Endpoint, session.request())
 	if err != nil {
+		var upstream *apiError
+		if session.provider.ID == "mimo" && session.tools && errors.As(err, &upstream) && upstream.searchUnavailable {
+			return NormalizedResponse{Provider: session.provider.ID, Model: session.provider.Model, Finish: Failed, HostedSearchUnavailable: true}, nil
+		}
 		return NormalizedResponse{}, err
 	}
 	result, message, err := normalize(session.provider, raw)
@@ -141,21 +161,48 @@ func (s *Service) complete(ctx context.Context, c analysis.LoginRequest, instruc
 		return NormalizedResponse{}, analysis.ErrLoginRequired
 	}
 	session := newSession(p, instructions, input, schema, tools)
+	searchKey := c.APIKey
 	var sources []analysis.Source
 	var warnings []string
 	var usage *Usage
 	searches := 0
 	for round := 0; round < maxToolRounds; round++ {
+		if err := ctx.Err(); err != nil {
+			return NormalizedResponse{}, err
+		}
 		result, err := session.next(ctx, s, c.APIKey)
+		if ctx.Err() != nil {
+			return NormalizedResponse{}, ctx.Err()
+		}
 		if err != nil {
 			return NormalizedResponse{}, err
 		}
-		sources = mergeSources(sources, result.Sources)
+		if !result.HostedSearchUnavailable {
+			sources = mergeSources(sources, result.Sources)
+		}
 		warnings = appendUnique(warnings, result.Warnings...)
 		if round == 0 {
 			usage = result.Usage
 		} else {
 			usage = addUsage(usage, result.Usage)
+		}
+		if result.HostedSearchUnavailable {
+			if !tools || session.searchProvider.ID != "mimo" {
+				return NormalizedResponse{}, analysis.ErrFailed
+			}
+			fallback := s.opts.SearchFallback
+			if fallback.key == "" {
+				return NormalizedResponse{}, analysis.ErrSearchUnavailable
+			}
+			session.searchProvider, searchKey = fallback.provider, fallback.key
+			guidance := *session.messages[0].Content + "\n本次内置联网搜索不可用，现已改用 rental_web_search。需要联网核价时调用此函数获取资料，再继续完成报告；失败轮次中的市价不得视为已核实。"
+			session.messages[0].Content = &guidance
+			warnings = appendUnique(warnings, "MiMo 搜索插件未开通，本次已切换到服务端备用搜索。")
+			// Preserve valid pending tool calls and their reasoning. A failed final
+			// answer is discarded and regenerated with the function search available.
+			if result.Finish != NeedsTools {
+				continue
+			}
 		}
 		switch result.Finish {
 		case Finished:
@@ -176,11 +223,11 @@ func (s *Service) complete(ctx context.Context, c analysis.LoginRequest, instruc
 					return NormalizedResponse{}, err
 				}
 				output := ""
-				if call.Name == searchToolName && p.SearchEndpoint != "" {
+				if call.Name == searchToolName && session.searchProvider.SearchEndpoint != "" {
 					searches++
 					var found []analysis.Source
 					var warning string
-					output, found, warning = s.search(ctx, c.APIKey, p, call.Arguments, searches)
+					output, found, warning = s.search(ctx, searchKey, session.searchProvider, call.Arguments, searches)
 					if err := ctx.Err(); err != nil {
 						return NormalizedResponse{}, err
 					}
@@ -229,7 +276,7 @@ func addUsage(a, b *Usage) *Usage {
 	return &Usage{InputTokens: sum(a.InputTokens, b.InputTokens), OutputTokens: sum(a.OutputTokens, b.OutputTokens), TotalTokens: sum(a.TotalTokens, b.TotalTokens), ReasoningTokens: sum(a.ReasoningTokens, b.ReasoningTokens), CachedInputTokens: sum(a.CachedInputTokens, b.CachedInputTokens), UncachedInputTokens: sum(a.UncachedInputTokens, b.UncachedInputTokens), SearchCalls: sum(a.SearchCalls, b.SearchCalls), SearchPages: sum(a.SearchPages, b.SearchPages)}
 }
 
-// Search APIs use the same key at a fixed official endpoint. Retrieved
+// Search uses its own selected credential at a fixed official endpoint. Retrieved
 // pages are data for the model; this process never navigates their URLs.
 func (s *Service) search(ctx context.Context, key string, p modelconfig.Provider, arguments string, count int) (string, []analysis.Source, string) {
 	failure := func(message string) (string, []analysis.Source, string) {
