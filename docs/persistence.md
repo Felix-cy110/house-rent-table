@@ -1,6 +1,6 @@
 # 后台业务提取与 MySQL 保存
 
-启用后，用户点击“发送并分析”，后端校验 Document 并将输入快照写入本地 bbolt 队列。原有报告调用保持输入与响应内容；独立后台 Codex 会话根据 JSON Schema 提取业务字段，校验后写入 MySQL。
+启用后，用户点击“发送并分析”，后端校验 Document 并将输入快照写入本地 bbolt 队列。原有报告调用保持输入与响应内容；独立后台 AI 请求根据 JSON Schema 提取业务字段，校验后写入 MySQL。
 
 只上传 Excel 不产生任务；每次有效分析请求产生一个新任务。同一文件再次分析保存新快照，后台重试沿用任务 ID。报告失败或取消不撤销已经落盘的任务。每个任务额外调用一次 AI，提取失败最多尝试 3 次，因此会增加模型用量。
 
@@ -23,7 +23,7 @@ go run ./cmd/server
 
 服务和迁移命令在读取配置前自动加载当前工作目录的 `.env`。文件不存在时继续使用系统环境变量；环境变量优先于 `.env`，包括显式设置的空字符串。`.env` 和 `.env.*` 已被 Git 忽略，仅提交不含真实密码的 `.env.example`。请在仓库根目录运行命令，或在服务启动目录放置 `.env`。未配置或显式清空 `RENT_MYSQL_DSN` 时关闭后台保存，原有功能可独立使用。
 
-连接串可使用单引号包裹，原样保留密码里的 `$`、`#` 等字符；支持 Windows UTF-8 BOM。配置解析失败时只输出通用错误，不输出配置原文。数据库连接串不传给 Codex 子进程，也不会进入前端构建变量。
+连接串可使用单引号包裹，原样保留密码里的 `$`、`#` 等字符；支持 Windows UTF-8 BOM。配置解析失败时只输出通用错误，不输出配置原文。数据库连接串不发送给模型 API，也不会进入前端构建变量。
 
 `RENT_DEFAULT_CURRENCY` 默认 CNY，仅作为未明确币种时的后端固定上下文；设置为空则不提供默认币种。每个任务保留创建时的上下文，重试不受之后环境变量变化影响。未给出单位/周期时不会自动补 MONTH，也不会自动把房间面积当物业计费面积。
 
@@ -63,7 +63,7 @@ V3 的 `internal/persistence/migrations/003_lease_months.sql` 在房源记录中
 
 若入队失败，页面明确提示后台任务未创建，主报告仍继续。本地存储故障时无法同时承诺无损记录和主流程永远成功。机器故障发生在模型已返回但结果尚未落盘的极短窗口，恢复后也可能再次调用模型；不宣称外部 AI 调用恰好一次。
 
-后台使用本应用的登录配置，独立 App Server、工作目录、事件流和超时。提取禁用联网、主分析 skill 和计算工具；每次提取尝试读取当时选定的提供方，数据库补写不会接触 AI。任务中不保存登录凭据。退出服务取消运行中的会话，保留未完成队列；升级提取规则后，尚未提取的旧版本任务明确失败，避免静默改变规则。
+后台使用本应用的 API 配置，独立发送 HTTP 请求并设置超时。提取使用 JSON Schema 结构化输出，不提供联网或计算工具、不加载主分析规则；每次提取尝试读取当时选定的提供方，数据库补写不会接触 AI。任务中不保存 API Key。退出服务取消运行中的请求，保留未完成队列；升级提取规则后，尚未提取的旧版本任务明确失败，避免静默改变规则。
 
 ## 状态查询
 
@@ -88,12 +88,15 @@ $env:RENT_TEST_MYSQL_DSN = '测试账号:密码@tcp(127.0.0.1:3306)/rental_test'
 go test ./internal/persistence -run TestMySQL -count=1
 ```
 
-使用已安装 Codex 和本地模拟 Responses 服务验证 outputSchema，不访问真实供应商、不消耗模型额度：
+使用本地模拟 HTTP 服务验证两种 API 的独立提取请求、JSON Schema 与规则，不访问真实供应商、不消耗模型额度：
 
 ```powershell
-$env:RENT_CODEX_SMOKE = '1'
-go test ./internal/codex -run TestInstalledCodexExtractionSchema -count=1
+go test ./internal/aiclient -run TestExtractionUsesIndependentStructuredRequest -count=1
 ```
+
+2026-10-19 直接 API 接入验证：全量 Go 测试、go vet、前端构建、29 项 Playwright 测试和模板检查通过。本地 HTTP 服务验证 Chat Completions 与 Responses 提取使用独立请求、原有 Schema 和规则，不携带主报告工具；本轮未重新运行真实 MySQL 集成测试，也未调用真实模型。
+
+以下是迁移到直接 API 接入前的历史验证记录，其中 CLI 协议测试已被上述 HTTP 接口测试替换。
 
 初版持久化实现已通过全部 Go 测试、go vet、前端构建、21 项 Playwright 测试和模板检查。隔离 MySQL 9.1 测试通过迁移重放、并发幂等、事务回滚、长元数据和精确小数验证；真实 Codex CLI 对接本地模拟 Responses 服务的测试也已通过。
 

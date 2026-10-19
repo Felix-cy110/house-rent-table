@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test';
 import { file } from './xlsx';
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: false, pending: false } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: false } }));
 });
 
-test('导入动态项目、区分空白与零、未登录时给出明确提示', async ({ page }) => {
-  await page.route('**/api/analyze', route => route.fulfill({ status: 401, json: { error: { code: 'codex_login_required', message: '请先登录 Codex，再发送并分析' } } }));
+test('导入动态项目、区分空白与零、未配置时给出明确提示', async ({ page }) => {
+  await page.route('**/api/analyze', route => route.fulfill({ status: 401, json: { error: { code: 'ai_config_required', message: '请先配置 API Key、模型和 URL，再发送并分析' } } }));
   await page.goto('/');
   await page.screenshot({ path: 'test-results/desktop-empty.png', fullPage: true });
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([
@@ -21,8 +21,8 @@ test('导入动态项目、区分空白与零、未登录时给出明确提示',
   const response = page.waitForResponse('**/api/analyze');
   await page.getByRole('button', { name: '发送并分析' }).click();
   expect((await response).status()).toBe(401);
-  await expect(page.getByText('请先登录 Codex，再发送并分析', { exact: true })).toBeVisible();
-  await expect(page.locator('.codex-response')).toHaveCount(0);
+  await expect(page.getByText('请先配置 API Key、模型和 URL，再发送并分析', { exact: true })).toBeVisible();
+  await expect(page.locator('.ai-response')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/desktop-imported.png', fullPage: true });
   await page.getByRole('button', { name: '清空', exact: true }).click();
   await expect(page.locator('#document-panel')).toBeHidden();
@@ -71,7 +71,7 @@ test('小区地点后的房间大小和朝向按原文显示并发送分析', as
   await expect(rows.nth(3)).toContainText('中介姓名');
   await expect(rows.nth(3).getByRole('cell')).toHaveText('未填写');
   await page.getByRole('button', { name: '发送并分析' }).click();
-  await expect(page.locator('.codex-response')).toHaveText('测试回复');
+  await expect(page.locator('.ai-response')).toHaveText('测试回复');
   expect(sent?.fields.map(field => field.label)).toEqual(['小区地点', '房间大小/平方', '朝向', '中介姓名']);
   expect(sent?.fields[1]).toMatchObject({ value: area, cell: 'B3', bold: false });
   expect(sent?.fields[2]).toMatchObject({ value: orientation, cell: 'B4', bold: false });
@@ -97,7 +97,7 @@ test('首月之后的每月费用按原文展示并发送分析', async ({ page 
   expect(await rows.nth(1).getByRole('cell').textContent()).toBe(monthlyValue);
   await expect(rows.nth(2)).toContainText('小区地点');
   await page.getByRole('button', { name: '发送并分析' }).click();
-  await expect(page.locator('.codex-response')).toHaveText('测试回复');
+  await expect(page.locator('.ai-response')).toHaveText('测试回复');
   expect(sent?.fields.map(field => field.label)).toEqual(['首月总共要付多少', '以后每个月要付多少钱', '小区地点', '中介姓名']);
   expect(sent?.fields[1]).toMatchObject({ value: monthlyValue, cell: 'B3' });
 });
@@ -126,7 +126,7 @@ test('单元格内容按文本显示，窄屏可以阅读和操作', async ({ pa
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole('button', { name: '发送并分析' }).click();
-  await expect(page.locator('.codex-response')).toContainText('这是测试回复。');
+  await expect(page.locator('.ai-response')).toContainText('这是测试回复。');
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
   await page.screenshot({ path: 'test-results/mobile-imported.png', fullPage: true });
 });
@@ -152,7 +152,7 @@ test('切换文件时，较慢的旧请求不会覆盖新表格', async ({ page 
   await expect(page.locator('#file-name')).toHaveText('新.xlsx');
 });
 
-test('预览的完整 JSON 原样发送，Codex 原文回复保留空格与换行', async ({ page }) => {
+test('预览的完整 JSON 原样发送，AI 原文回复保留空格与换行', async ({ page }) => {
   let sent = '';
   const answer = '  原始回复\n请确认费用。\n<script>window.hacked=true</script>';
   await page.route('**/api/analyze', route => {
@@ -170,7 +170,7 @@ test('预览的完整 JSON 原样发送，Codex 原文回复保留空格与换�
   await expect(page.locator('.review-report')).toBeVisible();
   expect(sent).toBe(preview);
   expect(JSON.parse(sent)).toEqual(document);
-  expect(await page.locator('.codex-response').textContent()).toBe(answer);
+  expect(await page.locator('.ai-response').textContent()).toBe(answer);
   expect(await page.evaluate(() => 'hacked' in window)).toBe(false);
 });
 

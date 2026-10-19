@@ -74,15 +74,11 @@ footer { font-size: 12px; line-height: 1.9; color: #7d8896; margin: 23px 0 0; te
 .account-heading .quiet { flex: 1; overflow-wrap: anywhere; }
 .login-options { margin-top: 12px; flex-direction: column; align-items: flex-start; }
 summary { font-size: 12px; cursor: pointer; color: #526b88; }
-#key-details { width: 100%; min-width: 0; }
+#key-form { width: 100%; min-width: 0; }
 #key-form { display: grid; gap: 8px; margin-top: 14px; max-width: 640px; }
 #key-form label { font-size: 14px; }
-#key-form input, #ccswitch-dir { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font: inherit; }
+#key-form input { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font: inherit; }
 #key-form button { justify-self: start; margin-top: 4px; }
-.ccswitch-import { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border, #e2e8f0); max-width: 640px; }
-.ccswitch-import p { font-size: 13px; line-height: 1.6; }
-#ccswitch-dir { margin-top: 8px; }
-#oauth-link { text-decoration: underline; }
 .connection-result { width: min(380px, calc(100% - 32px)); border: 1px solid #e1e6ec; border-radius: 12px; padding: 28px; color: #202c3a; text-align: center; overflow-wrap: anywhere; box-shadow: 0 16px 48px #202c3a26; }
 .connection-result::backdrop { background: #202c3a66; }
 .connection-result-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-bottom: 16px; border-radius: 50%; background: #e9f6ef; color: #26734d; font-size: 26px; }
@@ -92,7 +88,7 @@ summary { font-size: 12px; cursor: pointer; color: #526b88; }
 .connection-result button { width: 100%; }
 .payload-preview { margin-top: 20px; }
 .payload-preview pre { max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; padding: 12px; background: #f7f9fb; border-radius: 6px; }
-.codex-response { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.9; }
+.ai-response { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.9; }
 .review-report { min-width: 0; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
 .review-report h1, .review-report h2 { display: block; font-size: 18px; line-height: 1.5; letter-spacing: 0; margin: 26px 0 12px; }
 .review-report h3 { display: block; font-size: 16px; line-height: 1.5; margin: 24px 0 10px; }
@@ -112,7 +108,7 @@ summary { font-size: 12px; cursor: pointer; color: #526b88; }
 .report-table-wide th, .report-table-wide td { min-width: 84px; }
 .report-table thead th:first-child { width: auto; }
 .raw-report { border-top: 1px solid #eef0f3; margin-top: 24px; padding-top: 16px; }
-.raw-report .codex-response { margin-top: 12px; }
+.raw-report .ai-response { margin-top: 12px; }
 button:disabled { cursor: default; opacity: .6; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) {

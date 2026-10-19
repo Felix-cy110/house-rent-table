@@ -62,7 +62,7 @@ func TestImportThenUnconfiguredAnalysis(t *testing.T) {
 	analyze.Header.Set("Content-Type", "application/json")
 	recorder = httptest.NewRecorder()
 	handler.ServeHTTP(recorder, analyze)
-	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "codex_unavailable") {
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "ai_unavailable") {
 		t.Fatalf("want explicit not-configured state, got %s", recorder.Body.String())
 	}
 	if strings.Contains(recorder.Body.String(), `"text"`) {

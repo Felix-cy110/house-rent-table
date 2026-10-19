@@ -23,9 +23,31 @@ const report = `## 主要发现
 
 [1：收费公示](https://example.com/fees)，发布于 2026-09-01，查询于 2026-10-13；本测试使用虚构来源。`;
 
+test('Responses 引用显示可点击来源，保留 Unicode 原文并拒绝危险引用', async ({ page }) => {
+  const text = '参考价🏠[来源]。';
+  const citations = [
+    { title: '<img onerror="window.hacked=true">', url: 'https://example.com/fees', startIndex: 4, endIndex: 8 },
+    { title: '补充', url: 'https://example.com/other', startIndex: 4, endIndex: 8 },
+    { title: '危险', url: 'javascript:alert(1)', startIndex: 4, endIndex: 8 },
+    { title: '越界', url: 'https://example.com/invalid', startIndex: 50, endIndex: 60 },
+  ];
+  await page.route('**/api/analyze', route => route.fulfill({ json: { text, citations } }));
+  await page.goto('/');
+  await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '1000']]));
+  await page.getByRole('button', { name: '发送并分析' }).click();
+  const body = page.locator('.review-report');
+  await expect(body).toContainText('参考价🏠');
+  await expect(body.getByRole('link')).toHaveCount(2);
+  await expect(body.getByRole('link', { name: '1', exact: true })).toHaveAttribute('href', 'https://example.com/fees');
+  await expect(body.getByRole('link', { name: '2', exact: true })).toHaveAttribute('href', 'https://example.com/other');
+  await expect(body.locator('img, script')).toHaveCount(0);
+  await page.getByText('查看 AI 原文', { exact: true }).click();
+  expect(await page.locator('.ai-response').textContent()).toBe(text);
+});
+
 test('费用对照表和来源可阅读，保留完整回复原文，手机仅表格横向滚动', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: true, pending: false } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
   await page.route('**/api/analyze', route => route.fulfill({ json: { text: report } }));
   await page.goto('/');
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '3000'], ['押几付几', '押一付三'], ['物业费', '300元/月'], ['首次付款', '12000']], '测试房源.xlsx', ['A4']));
@@ -39,16 +61,16 @@ test('费用对照表和来源可阅读，保留完整回复原文，手机仅�
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect(await page.locator('.report-table').first().evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/mobile-review.png', fullPage: true });
-  await page.getByText('查看 Codex 原文', { exact: true }).click();
-  await expect(page.locator('.codex-response')).toBeVisible();
-  expect(await page.locator('.codex-response').textContent()).toBe(report);
+  await page.getByText('查看 AI 原文', { exact: true }).click();
+  await expect(page.locator('.ai-response')).toBeVisible();
+  expect(await page.locator('.ai-response').textContent()).toBe(report);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.getByText('查看 Codex 原文', { exact: true }).click();
+  await page.getByText('查看 AI 原文', { exact: true }).click();
   await page.screenshot({ path: 'test-results/desktop-review.png', fullPage: true });
 });
 
 test('来源不足正常展示未能核实，模型输出不能注入 HTML 或危险链接', async ({ page }) => {
-  const answer = '未能核实：地点不明确，未找到可比来源。\n\n<script>window.hacked=true</script>\n\n<img src="https://example.com/track" onerror="window.hacked=true">\n\n[危险](javascript:alert(1)) [本地](file:///etc/passwd) [相对](/api/codex/logout) ![追踪](https://example.com/image)';
+  const answer = '未能核实：地点不明确，未找到可比来源。\n\n<script>window.hacked=true</script>\n\n<img src="https://example.com/track" onerror="window.hacked=true">\n\n[危险](javascript:alert(1)) [本地](file:///etc/passwd) [相对](/api/ai/disconnect) ![追踪](https://example.com/image)';
   await page.route('**/api/analyze', route => route.fulfill({ json: { text: answer } }));
   let tracked = false;
   await page.route('https://example.com/**', route => { tracked = true; return route.abort(); });
@@ -90,7 +112,7 @@ test('精简报告段落清晰，手机两三列表格无需横向滚动', async
 1. 提供首次付款明细，解释余额及电费是否计入。
 2. 确认物业费是否另付，以及一次性费用的覆盖期间。`;
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/api/codex/account', route => route.fulfill({ json: { loggedIn: true, pending: false } }));
+  await page.route('**/api/ai/config', route => route.fulfill({ json: { connected: true, model: 'test-model', baseUrl: 'https://example.com/v1' } }));
   await page.route('**/api/analyze', route => route.fulfill({ json: { text: conciseReport } }));
   await page.goto('/');
   await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '1500'], ['押几付几', '押一付一'], ['首月总共要付多少', '6200']], '精简报告.xlsx', ['A3']));
@@ -107,9 +129,9 @@ test('精简报告段落清晰，手机两三列表格无需横向滚动', async
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await reportBody.screenshot({ path: 'test-results/mobile-review-concise.png' });
-  await page.getByText('查看 Codex 原文', { exact: true }).click();
-  expect(await page.locator('.codex-response').textContent()).toBe(conciseReport);
-  await page.getByText('查看 Codex 原文', { exact: true }).click();
+  await page.getByText('查看 AI 原文', { exact: true }).click();
+  expect(await page.locator('.ai-response').textContent()).toBe(conciseReport);
+  await page.getByText('查看 AI 原文', { exact: true }).click();
   await page.setViewportSize({ width: 1280, height: 900 });
   await reportBody.screenshot({ path: 'test-results/desktop-review-concise.png' });
 });
