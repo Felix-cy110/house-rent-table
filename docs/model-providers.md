@@ -60,19 +60,19 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
   → Analyze / Extract → HTTP / 页面 / 持久化
 ```
 
-`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage，以及 HostedSearchUnavailable 能力状态。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。
+`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage，以及 HostedSearchUnavailable 能力状态。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。主分析成功时还返回 `turnJson`（格式化 JSON 字符串，避免浏览器解析损失大整数精度），由“查看日志”在新标签页展示。
 
 | 归一化内容 | 处理规则 |
 | --- | --- |
 | 正文和结束状态 | stop → completed；tool_calls → 等待工具；length、上下文超限及重复截断 → incomplete；content_filter/sensitive → refused；其他未知结束原因 → failed。仅完整非空正文可作为最终结果 |
 | 工具调用 | 统一为 ID、Name、Arguments；检查 ID、重复 ID、函数名、工具类型、数量和消息结构；本地执行只允许计算与已配置搜索 |
-| 私有续传 | 完整保留 reasoning_content 的字符串、缺失/null 状态以及函数调用；不把未识别的 response-only 扩展回传，不将思考内容暴露给业务、浏览器或日志 |
+| 思考续传与日志 | 完整保留 reasoning_content 的字符串、缺失/null 状态以及函数调用；不把未识别的 response-only 扩展回传。主分析的独立 JSON 日志保留原始响应中的思考及扩展字段，报告正文与后台提取结果不拼接思考 |
 | 来源 | MiMo annotations、GLM 顶层 web_search 和独立搜索结果统一为 Title、URL、Site、PublishedAt；去重、限制总数 100；无位置时仅列来源，不造引用坐标 |
 | 引用 | 只接受有效 URL 和有效字符范围，统一为 Unicode 码点索引；最终正文中的引用与历轮来源分开保存 |
 | 用量 | prompt/completion/total/reasoning/cached tokens 统一；DeepSeek 兼容顶层 prompt_cache_hit_tokens、prompt_cache_miss_tokens；MiMo 读取可选搜索计数；未知为 nil，明确的 0 保留为 0，不估算缺失数据 |
 | 多轮用量 | 只在相关轮次都提供计数时累加；缺任一轮则对应总量未知，防止把不完整统计当成全量；这不是费用计算器 |
 | 可选扩展 | model、usage、详情对象、来源和日期缺失/null 均可处理；无法识别的可选元数据忽略；未知扩展忽略。不可恢复的正文/思考/工具结构错误拒绝，不掩盖协议失败 |
-| 错误 | 明确的 MiMo 插件未开通信号归一化为能力状态，由共用工具循环处理；其他 HTTP 错误和响应 error 统一失败。返回本地固定消息，不回显供应商原始错误、Key 或请求内容 |
+| 错误 | 明确的 MiMo 插件未开通信号归一化为能力状态，由共用工具循环处理；其他 HTTP 错误和响应 error 统一失败。错误接口仍返回本地固定消息；成功报告的 turn 日志保留中间失败/降级响应并脱敏 Key，超出原有错误响应读取上限时明确标记 truncated |
 
 配置及密钥仅保存在本机配置文件，HTTP 重定向被拒绝。旧 `{apiKey,baseUrl,model}` 文件标记 needsReconnect；不按 URL 猜供应商，不复用旧 Key。用户显式重新连接成功后原子替换，失败保留旧文件；清除操作删除文件。
 

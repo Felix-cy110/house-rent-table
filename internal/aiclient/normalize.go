@@ -23,7 +23,7 @@ const (
 )
 
 // NormalizedResponse is the only model response read by orchestration and
-// business services. Wire fields and reasoning stay in the private chat session.
+// business services. Wire fields and reasoning are also retained in turn logs.
 type NormalizedResponse struct {
 	Provider                string
 	Model                   string
@@ -41,14 +41,14 @@ type ToolCall struct{ ID, Name, Arguments string }
 
 // Nil means unreported, not zero. Counters represent tokens, not prices.
 type Usage struct {
-	InputTokens         *int64
-	OutputTokens        *int64
-	TotalTokens         *int64
-	ReasoningTokens     *int64
-	CachedInputTokens   *int64
-	UncachedInputTokens *int64
-	SearchCalls         *int64
-	SearchPages         *int64
+	InputTokens         *int64 `json:"inputTokens"`
+	OutputTokens        *int64 `json:"outputTokens"`
+	TotalTokens         *int64 `json:"totalTokens"`
+	ReasoningTokens     *int64 `json:"reasoningTokens"`
+	CachedInputTokens   *int64 `json:"cachedInputTokens"`
+	UncachedInputTokens *int64 `json:"uncachedInputTokens"`
+	SearchCalls         *int64 `json:"searchCalls"`
+	SearchPages         *int64 `json:"searchPages"`
 }
 
 type toolCall struct {

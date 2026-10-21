@@ -45,11 +45,20 @@ func (e *apiError) Error() string {
 }
 func (e *apiError) Unwrap() error { return analysis.ErrFailed }
 
-func (s *Service) post(ctx context.Context, key, address string, body any) (json.RawMessage, error) {
+func (s *Service) post(ctx context.Context, key, address string, body any) (_ json.RawMessage, resultErr error) {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return nil, analysis.ErrFailed
 	}
+	kind := "model"
+	if strings.HasSuffix(address, "/web_search") || strings.HasSuffix(address, "/search") {
+		kind = "search"
+	}
+	event := startTurnEvent(ctx, kind)
+	if event != nil {
+		event.Method, event.URL, event.Request = http.MethodPost, address, raw
+	}
+	defer func() { event.finish(resultErr) }()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address, bytes.NewReader(raw))
 	if err != nil {
 		return nil, analysis.ErrFailed
@@ -65,21 +74,27 @@ func (s *Service) post(ctx context.Context, key, address string, body any) (json
 		return nil, &apiError{}
 	}
 	defer resp.Body.Close()
+	if event != nil {
+		event.HTTPStatus = resp.StatusCode
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		failure := &apiError{status: resp.StatusCode}
-		if resp.StatusCode == 400 || resp.StatusCode == 403 || resp.StatusCode == 422 {
+		detectSearchFailure := resp.StatusCode == 400 || resp.StatusCode == 403 || resp.StatusCode == 422
+		if event != nil || detectSearchFailure {
 			const maxErrorBytes = 16 << 10
 			raw, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes+1))
+			event.response(raw, maxErrorBytes)
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if err == nil && len(raw) <= maxErrorBytes && json.Valid(raw) {
+			if detectSearchFailure && err == nil && len(raw) <= maxErrorBytes && json.Valid(raw) {
 				failure.searchUnavailable = inactiveSearchEnvelope(raw)
 			}
 		}
 		return nil, failure
 	}
 	raw, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	event.response(raw, maxResponseBytes)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -236,6 +251,10 @@ func (s *Service) complete(ctx context.Context, c analysis.LoginRequest, instruc
 				if err := ctx.Err(); err != nil {
 					return NormalizedResponse{}, err
 				}
+				event := startTurnEvent(ctx, "tool")
+				if event != nil {
+					event.ToolCallID, event.Name, event.Arguments = call.ID, call.Name, call.Arguments
+				}
 				output := ""
 				if call.Name == searchToolName && session.searchProvider.SearchEndpoint != "" {
 					var found []analysis.Source
@@ -250,6 +269,10 @@ func (s *Service) complete(ctx context.Context, c analysis.LoginRequest, instruc
 					}
 				} else {
 					output = calculate(call.Name, call.Arguments)
+				}
+				if event != nil {
+					event.Output = output
+					event.finish(nil)
 				}
 				session.toolResult(call.ID, output)
 			}
