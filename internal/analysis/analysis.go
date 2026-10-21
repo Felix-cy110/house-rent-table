@@ -26,6 +26,8 @@ type Result struct {
 	Citations []Citation `json:"citations,omitempty"`
 	Sources   []Source   `json:"sources,omitempty"`
 	Warnings  []string   `json:"warnings,omitempty"`
+	// Keep the JSON serialized so browser parsing cannot round vendor int64 IDs.
+	TurnJSON string `json:"turnJson,omitempty"`
 }
 
 // Source is a retrieved page, not proof that every claim in the report is verified.

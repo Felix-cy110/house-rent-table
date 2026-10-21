@@ -23,6 +23,7 @@ export interface AnalysisResult {
   citations?: Citation[];
   sources?: Source[];
   warnings?: string[];
+  turnJson?: string;
 }
 
 export interface Citation { title: string; url: string; startIndex: number; endIndex: number }

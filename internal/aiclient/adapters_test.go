@@ -88,9 +88,18 @@ func TestProviderEndpointsThinkingAndReasoningContinuation(t *testing.T) {
 				t.Fatal(err)
 			}
 			result, err := s.Analyze(context.Background(), json.RawMessage(`{"fields":[]}`))
-			raw, _ := json.Marshal(result)
-			if err != nil || result.Text != "结论 0.30 元" || calls != 3 || strings.Contains(string(raw), "仅供续传") || len(result.Warnings) != 1 {
-				t.Fatalf("unexpected normalized report: %+v %v", result, err)
+			if err != nil || result.Text != "结论 0.30 元" || calls != 3 || len(result.Warnings) != 1 {
+				t.Fatalf("unexpected normalized report: %q %v", result.Text, err)
+			}
+			var turn turnLog
+			if json.Unmarshal([]byte(result.TurnJSON), &turn) != nil || len(turn.Events) != 3 || turn.Provider != provider.ID {
+				t.Fatal("missing provider turn log")
+			}
+			if !strings.Contains(string(turn.Events[0].Response), "仅供续传") || !strings.Contains(string(turn.Events[0].Response), "future_extension") || turn.Events[1].ToolCallID != "calc1" || !strings.Contains(turn.Events[1].Output, "0.30") {
+				t.Fatal("turn lost raw reasoning, vendor extensions or tool results")
+			}
+			if strings.Contains(result.Text, "仅供续传") || strings.Contains(result.TurnJSON, "fixture-key") || strings.Contains(string(turn.Events[2].Request), "future_extension") {
+				t.Fatal("reasoning entered report, credentials entered log, or response-only fields entered continuation")
 			}
 		})
 	}

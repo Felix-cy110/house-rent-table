@@ -2,6 +2,7 @@ import './style.css';
 import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
+import { createTurnLogLink, releaseTurnLog } from './turn-log';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -105,6 +106,7 @@ function clearDocument() {
   panel.hidden = true;
   analysisPanel.hidden = true;
   list.replaceChildren();
+  releaseTurnLog(analysisContent);
   analysisContent.replaceChildren();
   element('import-warnings').replaceChildren();
   element('import-warnings').hidden = true;
@@ -208,6 +210,8 @@ function renderAnalysis(result: AnalysisResult, doc: RentalDocument) {
   });
   const actions = textElement('div', '', 'analysis-action');
   actions.append(reportButton);
+  if (result.turnJson) actions.append(createTurnLogLink(result.turnJson));
+  releaseTurnLog(analysisContent);
   analysisContent.replaceChildren(renderReport(result.text, result.citations, result.sources, result.warnings), actions, feedbackStatus);
 }
 
@@ -248,6 +252,7 @@ analyzeButton.addEventListener('click', async () => {
   analyzeButton.textContent = 'AI 正在分析…';
   element('cancel-analysis').hidden = false;
   analysisPanel.hidden = false;
+  releaseTurnLog(analysisContent);
   analysisContent.replaceChildren(textElement('p', '正在核对表内费用并检查标记项目，通常需要几分钟。可随时取消。', 'quiet'));
   try {
     const result = await analyze(payload, activeRequest.signal, receipt => {
