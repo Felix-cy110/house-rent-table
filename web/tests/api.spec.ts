@@ -9,7 +9,7 @@ test('显示三种固定模型与必填密钥，页面不再提供 Codex 登录�
     await expect(page.getByLabel(name, { exact: true })).toBeVisible();
     await expect(page.getByLabel(name, { exact: true })).toHaveAttribute('required', '');
   }
-  await expect(page.getByRole('button', { name: '验证并保存', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '验证并连接Enter', exact: true })).toBeVisible();
   await expect(page.locator('#api-provider option')).toHaveText(['MiMo v2.6-Flash', 'GLM 5.3-Flash', 'DeepSeek Flash']);
   await expect(page.locator('#api-base-url, #api-model')).toHaveCount(0);
   await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
@@ -85,7 +85,7 @@ test('连接只提交供应商和密钥，刷新可恢复且清除后移除配�
   await page.goto('/');
   await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
   await page.getByLabel('API Key', { exact: true }).fill('custom-test-secret');
-  await page.getByRole('button', { name: '验证并保存', exact: true }).click();
+  await page.getByRole('button', { name: '验证并连接Enter', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeVisible();
   expect(submitted).toEqual({ apiKey: 'custom-test-secret', provider: 'deepseek' });
   await expect(page.locator('#api-key')).toHaveValue('');
@@ -106,7 +106,7 @@ test('首次连接超时后保持未配置且可重试', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('模型', { exact: true }).selectOption('deepseek');
   await page.getByLabel('API Key', { exact: true }).fill('test-secret');
-  await page.getByRole('button', { name: '验证并保存', exact: true }).click();
+  await page.getByRole('button', { name: '验证并连接Enter', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '连接失败', exact: true });
   await expect(dialog).toContainText('连接验证超时');
   await expect(page.locator('#account-status')).toHaveText('未配置');
@@ -148,7 +148,7 @@ test('真实 Go 服务完成 MiMo 配置、核算、搜索降级与来源展示'
     await page.goto('/');
     await page.getByLabel('模型', { exact: true }).selectOption('mimo');
     await page.getByLabel('API Key', { exact: true }).fill('local-test-only-key');
-    await page.getByRole('button', { name: '验证并保存', exact: true }).click();
+    await page.getByRole('button', { name: '验证并连接Enter', exact: true }).click();
     await expect(page.getByRole('dialog', { name: '连接成功', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '知道了', exact: true }).click();
     await page.getByLabel('选择 Excel 文件').setInputFiles(file([['月租', '2000'], ['押几付几', '押一付三']]));

@@ -9,7 +9,7 @@ export function setupAuth(container: HTMLElement) {
       <form id="key-form" class="provider-form">
         <label for="api-provider">模型</label><select id="api-provider" required aria-describedby="provider-note" disabled><option value="">正在读取模型…</option></select>
         <label for="api-key">API Key</label><input id="api-key" type="password" placeholder="填写 API Key" autocomplete="off" required maxlength="8192" />
-        <button id="key-connect" class="choose-file" type="submit" disabled>验证并保存</button>
+        <button id="key-connect" class="choose-file" type="submit" disabled>验证并连接Enter</button>
       </form>
       <p class="quiet">三种模型均开启思考模式。选择模型后，只需填写该供应商的 API Key。</p>
       <p id="provider-note" class="quiet" role="status"></p>
@@ -109,7 +109,7 @@ export function setupAuth(container: HTMLElement) {
       showResult('error', showError(error));
     } finally {
       input.value = '';
-      button.textContent = '验证并保存';
+      button.textContent = '验证并连接Enter';
       disable(false);
     }
   }
