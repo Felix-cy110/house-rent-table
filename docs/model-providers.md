@@ -60,7 +60,9 @@ GLM 通用 Chat 文档描述了内置 web_search，但 **GLM 5.3-Flash 的专属
   → Analyze / Extract → HTTP / 页面 / 持久化
 ```
 
-`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage，以及 HostedSearchUnavailable 能力状态。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。主分析成功时还返回 `turnJson`（格式化 JSON 字符串，避免浏览器解析损失大整数精度），由“查看日志”在新标签页展示。
+`NormalizedResponse` 包含 Provider、Model、Text、Finish、ToolCalls、Sources、Citations、Warnings、Usage，以及 HostedSearchUnavailable 能力状态。正文只从 content 读取，不将 reasoning_content 拼进报告或提取 JSON。业务结果保持原有 text 字段，增加可选的来源和提示；业务侧没有厂商分支。主分析成功时还返回 `turnJson`（格式化 JSON 字符串，避免浏览器解析损失大整数精度），由“查看日志”在当前标签页的 `#/logs/<id>` 视图展示。默认“精简版”面向提示词调试，可切换“全量版”；摘要与 JSON 语法高亮由前端呈现，复制、下载和行数/大小均跟随所选版本，全量版始终使用原始字符串。路由历史仅包含随机标识，不写入日志内容。返回报告及浏览器前进/后退保留当前分析与版本选择，刷新、清空或重新分析后旧日志显示失效提示。
+
+精简版由前端针对日志 schema v1 确定性整理，不调用模型、不改变原始日志。`prompt` 保留首轮系统/开发者提示词、用户输入、工具定义和思考等设置；`steps` 按原事件顺序保留模型思考、正文、工具调用/结果、来源与错误。后续模型请求只记录 `promptChanges`：`messages` 中的 `index` 指向 `prompt.messages` 的位置，`message` 是该位置的新内容（null 表示移除）；其他变化字段替换先前设置，null 表示移除。工具参数/结果中的合法 JSON 展开为对象，非 JSON 原文保留；大整数及小数保留原数值字面量。成功搜索的 HTTP 明细、重复历史消息、HTTP/时间/用量元数据省略，搜索错误及截断标记仍保留，`result` 保留最终报告及提示。未知格式或无法解析时禁用精简版并显示全量原文，不生成不完整的替代日志。
 
 | 归一化内容 | 处理规则 |
 | --- | --- |
