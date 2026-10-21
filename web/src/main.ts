@@ -2,12 +2,16 @@ import './style.css';
 import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
+import { setupSettings } from './settings';
 import { createTurnLogLink, releaseTurnLog } from './turn-log';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <header class="page-header">
-    <div class="wordmark"><span class="brand-icon" aria-hidden="true">⌂</span> 租房检查</div>
+    <div class="header-brand">
+      <div class="wordmark"><span class="brand-icon" aria-hidden="true">⌂</span> 租房检查</div>
+      <div id="app-settings"></div>
+    </div>
     <a class="template-link" href="/api/template" download>下载空白模板 <span aria-hidden="true">↗</span></a>
   </header>
   <section class="intro">
@@ -49,6 +53,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <footer>只核查表内项目。价格对照附来源，无法核实的内容会单独说明。<br /><span class="session-note">清空或刷新只移除页面中的表格与回复；已启用的后台历史保存不受影响。API 配置由本机服务保存，可随时清除。</span></footer>
 `;
 
+setupSettings(document.getElementById('app-settings')!);
 setupAuth(document.getElementById('ai-account')!);
 void fetch('/api/persistence').then(response => response.json()).then((config: { enabled?: boolean }) => {
   if (config.enabled) document.getElementById('persistence-notice')!.hidden = false;
