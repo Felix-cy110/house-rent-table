@@ -3,10 +3,11 @@ import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from 
 import { setupAuth } from './auth';
 import { renderReport } from './report';
 import { setupSettings } from './settings';
-import { createTurnLogLink, releaseTurnLog } from './turn-log';
+import { setupTurnLog } from './turn-log';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
+  <div id="report-view">
   <header class="page-header">
     <div class="header-brand">
       <div class="wordmark"><span class="brand-icon" aria-hidden="true">⌂</span> 租房检查</div>
@@ -51,9 +52,11 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <div id="analysis-content"></div>
   </section>
   <footer>只核查表内项目。价格对照附来源，无法核实的内容会单独说明。<br /><span class="session-note">清空或刷新只移除页面中的表格与回复；已启用的后台历史保存不受影响。API 配置由本机服务保存，可随时清除。</span></footer>
+  </div>
 `;
 
 setupSettings(document.getElementById('app-settings')!);
+const turnLog = setupTurnLog(document.getElementById('report-view')!);
 setupAuth(document.getElementById('ai-account')!);
 void fetch('/api/persistence').then(response => response.json()).then((config: { enabled?: boolean }) => {
   if (config.enabled) document.getElementById('persistence-notice')!.hidden = false;
@@ -111,7 +114,7 @@ function clearDocument() {
   panel.hidden = true;
   analysisPanel.hidden = true;
   list.replaceChildren();
-  releaseTurnLog(analysisContent);
+  turnLog.clear();
   analysisContent.replaceChildren();
   element('import-warnings').replaceChildren();
   element('import-warnings').hidden = true;
@@ -215,8 +218,8 @@ function renderAnalysis(result: AnalysisResult, doc: RentalDocument) {
   });
   const actions = textElement('div', '', 'analysis-action');
   actions.append(reportButton);
-  if (result.turnJson) actions.append(createTurnLogLink(result.turnJson));
-  releaseTurnLog(analysisContent);
+  turnLog.clear();
+  if (result.turnJson) actions.append(turnLog.createLink(result.turnJson, doc.fileName));
   analysisContent.replaceChildren(renderReport(result.text, result.citations, result.sources, result.warnings), actions, feedbackStatus);
 }
 
@@ -257,7 +260,7 @@ analyzeButton.addEventListener('click', async () => {
   analyzeButton.textContent = 'AI 正在分析…';
   element('cancel-analysis').hidden = false;
   analysisPanel.hidden = false;
-  releaseTurnLog(analysisContent);
+  turnLog.clear();
   analysisContent.replaceChildren(textElement('p', '正在核对表内费用并检查标记项目，通常需要几分钟。可随时取消。', 'quiet'));
   try {
     const result = await analyze(payload, activeRequest.signal, receipt => {
