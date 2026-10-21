@@ -2,13 +2,17 @@ import './style.css';
 import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
+import { setupSettings } from './settings';
 import { setupTurnLog } from './turn-log';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div id="report-view">
   <header class="page-header">
-    <div class="wordmark"><span class="brand-icon" aria-hidden="true">⌂</span> 租房检查</div>
+    <div class="header-brand">
+      <div class="wordmark"><span class="brand-icon" aria-hidden="true">⌂</span> 租房检查</div>
+      <div id="app-settings"></div>
+    </div>
     <a class="template-link" href="/api/template" download>下载空白模板 <span aria-hidden="true">↗</span></a>
   </header>
   <section class="intro">
@@ -51,6 +55,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
 `;
 
+setupSettings(document.getElementById('app-settings')!);
 const turnLog = setupTurnLog(document.getElementById('report-view')!);
 setupAuth(document.getElementById('ai-account')!);
 void fetch('/api/persistence').then(response => response.json()).then((config: { enabled?: boolean }) => {
