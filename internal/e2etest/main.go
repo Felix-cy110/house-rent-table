@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -50,12 +51,25 @@ func (fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		w.WriteHeader(400)
 		return w.Result(), nil
 	}
+	// Keep provider responses deterministic while exercising the real import,
+	// orchestration, calculator, search fallback and log paths for both fixtures.
+	label, expression, total := "押一付三", "2000*(1+3)", "8000.00"
+	var input struct {
+		FileName string `json:"fileName"`
+	}
+	if len(body.Messages) > 1 {
+		_ = json.Unmarshal([]byte(body.Messages[1].Content), &input)
+	}
+	isDeveloperFixture := input.FileName == "租房信息测试.xlsx"
+	if isDeveloperFixture {
+		label, expression, total = "押一付一", "1500*(1+1)", "3000.00"
+	}
 	var response string
 	if len(body.Tools) == 0 {
 		response = `{"choices":[{"finish_reason":"stop","message":{"content":"OK"}}]}`
-	} else if len(body.Messages) == 2 && strings.Contains(body.Messages[1].Content, "月租") {
-		response = `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"fixture-private-thinking","tool_calls":[{"id":"calc1","type":"function","function":{"name":"rental_calculate","arguments":"{\"calculations\":[{\"label\":\"押一付三\",\"expression\":\"2000*(1+3)\"}]}"}}]}}]}`
-	} else if len(body.Messages) == 4 && body.Messages[2].Reasoning == "fixture-private-thinking" && strings.Contains(body.Messages[3].Content, "8000.00") {
+	} else if len(body.Messages) == 2 && (strings.Contains(body.Messages[1].Content, "月租") || isDeveloperFixture) {
+		response = fmt.Sprintf(`{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"fixture-private-thinking","tool_calls":[{"id":"calc1","type":"function","function":{"name":"rental_calculate","arguments":"{\"calculations\":[{\"label\":\"%s\",\"expression\":\"%s\"}]}"}}]}}]}`, label, expression)
+	} else if len(body.Messages) == 4 && body.Messages[2].Reasoning == "fixture-private-thinking" && strings.Contains(body.Messages[3].Content, total) {
 		if len(body.Tools) == 2 && body.Tools[1].Type == "web_search" {
 			w.WriteHeader(403)
 			response = `{"error":{"message":"Web Search plugin not activated"}}`
@@ -63,7 +77,7 @@ func (fixtureTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			response = `{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,"reasoning_content":"fixture-private-thinking","tool_calls":[{"id":"search1","type":"function","function":{"name":"rental_web_search","arguments":"{\"query\":\"测试区域 租金\"}"}}]}}]}`
 		}
 	} else if len(body.Messages) == 6 && body.Messages[4].Reasoning == "fixture-private-thinking" && strings.Contains(body.Messages[5].Content, "https://example.com/fees") {
-		response = `{"choices":[{"finish_reason":"stop","message":{"content":"押一付三合计 8000.00 元。","reasoning_content":"fixture-private-thinking"}}]}`
+		response = fmt.Sprintf(`{"choices":[{"finish_reason":"stop","message":{"content":"%s合计 %s 元。","reasoning_content":"fixture-private-thinking"}}]}`, label, total)
 	} else {
 		w.WriteHeader(400)
 		return w.Result(), nil
