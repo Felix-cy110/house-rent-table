@@ -2,7 +2,7 @@ import { version } from '../package.json';
 
 const developerModeKey = 'house-rent:developer-mode';
 
-export function setupSettings(container: HTMLElement) {
+export function setupSettings(container: HTMLElement, onModeChange?: (enabled: boolean) => void) {
   container.innerHTML = `
     <button id="settings-button" class="settings-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 3-.7 2.1-1.9 1.1-2.2-.4-3 5.2 1.5 1.7v2.2l-1.5 1.7 3 5.2 2.2-.4 1.9 1.1L9 24h6l.7-2.1 1.9-1.1 2.2.4 3-5.2-1.5-1.7v-2.2l1.5-1.7-3-5.2-2.2.4-1.9-1.1L15 3Z" transform="translate(2 0) scale(.83)" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="11.2" r="3" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -41,6 +41,7 @@ export function setupSettings(container: HTMLElement) {
     button.dataset.developerMode = String(developerMode);
     el('developer-mode-status').textContent = developerMode ? '已开启' : '未开启';
     el('developer-mode-status').classList.toggle('enabled', developerMode);
+    onModeChange?.(developerMode);
   }
 
   function toggleDeveloperMode() {

@@ -29,6 +29,18 @@ button:focus-visible, a:focus-visible { outline: 3px solid #8aabd9; outline-offs
 .developer-mode-row { margin-top: 24px; padding-top: 20px; border-top: 1px solid #eef0f3; }
 .mode-badge { padding: 4px 9px; border-radius: 5px; color: #798491; background: #f3f5f8; font-size: 12px; }
 .mode-badge.enabled { color: #26734d; background: #e9f6ef; }
+.developer-panel { padding: 22px 24px; margin-bottom: 20px; background: #f4f7fc; border: 1px solid #cddaea; border-radius: 10px; }
+.developer-panel .section-heading { margin-bottom: 12px; }
+.developer-label { padding: 4px 8px; border-radius: 5px; color: #466b9b; background: #e7eef9; font-size: 11px; white-space: nowrap; }
+.developer-description { margin: 0; color: #697787; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.developer-test-steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 18px 0; counter-reset: test-step; }
+.developer-test-steps li { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid #dfe5ee; border-radius: 6px; color: #798491; background: #fff; font-size: 12px; counter-increment: test-step; }
+.developer-test-steps li::before { content: counter(test-step, decimal-leading-zero); font-size: 10px; font-variant-numeric: tabular-nums; }
+.developer-test-steps .active { color: #365c8b; border-color: #8ba6c8; background: #edf2fa; }
+.developer-test-steps .done { color: #26734d; border-color: #c5e3d2; background: #f0f8f3; }
+.developer-test-steps .done::before { content: '✓'; }
+.developer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.developer-actions .quiet { line-height: 1.7; }
 .template-link { font-size: 13px; white-space: nowrap; }
 .template-link span { margin-left: 5px; }
 .intro { margin: 48px 0 30px; }
@@ -137,6 +149,7 @@ button:disabled { cursor: default; opacity: .6; }
   .intro { margin: 32px 0 24px; }
   .intro p { font-size: 13px; }
   .upload-panel, .document-panel, .analysis-panel { padding: 20px 16px; }
+  .developer-panel { padding: 20px 16px; }
   .section-heading > .quiet { font-size: 11px; }
   .drop-zone { padding: 25px 8px; }
   .file-heading { align-items: flex-start; flex-direction: column; gap: 6px; }

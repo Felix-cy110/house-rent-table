@@ -48,8 +48,8 @@ export async function reportBroker(brokerName: string): Promise<BrokerFeedback> 
   }));
 }
 
-export async function account(): Promise<APIAccount> {
-  return readResponse<APIAccount>(await fetch('/api/ai/config'));
+export async function account(signal?: AbortSignal): Promise<APIAccount> {
+  return readResponse<APIAccount>(await fetch('/api/ai/config', { signal }));
 }
 
 export async function login(connection: APIConnection): Promise<{ ok: boolean }> {

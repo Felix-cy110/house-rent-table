@@ -1,9 +1,10 @@
 import './style.css';
-import { analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
+import { account, analyze, APIError, importExcel, persistenceStatus, reportBroker } from './api';
 import { setupAuth } from './auth';
 import { renderReport } from './report';
 import { setupSettings } from './settings';
 import { setupTurnLog } from './turn-log';
+import testWorkbookURL from './fixtures/rental-test.xlsx?url';
 import type { AnalysisResult, RentalDocument, RentalField } from './types';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
@@ -20,6 +21,22 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <p>上传中介填写的 Excel，核对表内费用，核算加粗项目。</p>
   </section>
   <section id="ai-account" class="account-panel" aria-label="AI 接口配置"></section>
+  <section id="developer-panel" class="developer-panel" aria-labelledby="developer-title" hidden>
+    <div class="section-heading">
+      <h2 id="developer-title">开发者模式</h2><span class="developer-label">端到端测试</span>
+    </div>
+    <p class="developer-description">自动导入「租房信息测试.xlsx」，使用当前配置的 AI 生成检查结果。</p>
+    <ol id="developer-test-steps" class="developer-test-steps" aria-label="测试流程">
+      <li>导入测试表格</li><li>AI 分析</li><li>展示结果</li>
+    </ol>
+    <div class="developer-actions">
+      <button id="developer-test-button" class="primary-button" type="button">一键测试</button>
+      <button id="cancel-developer-test" class="text-button" type="button" hidden>取消测试</button>
+      <span class="quiet">会发送真实 AI 请求，可能产生调用费用。</span>
+    </div>
+    <p id="developer-persistence-notice" class="format-hint" hidden>当前已启用历史保存，测试数据也会保存；取消测试不会撤销已提交的保存任务。</p>
+    <p id="developer-test-status" class="message" role="status" aria-live="polite" hidden></p>
+  </section>
   <section class="upload-panel" aria-labelledby="upload-title">
     <div class="section-heading"><h2 id="upload-title"><span class="step">01</span> 上传表格</h2><span class="quiet">一份表格，一套房源</span></div>
     <div id="drop-zone" class="drop-zone">
@@ -55,11 +72,13 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
 `;
 
-setupSettings(document.getElementById('app-settings')!);
 const turnLog = setupTurnLog(document.getElementById('report-view')!);
 setupAuth(document.getElementById('ai-account')!);
 void fetch('/api/persistence').then(response => response.json()).then((config: { enabled?: boolean }) => {
-  if (config.enabled) document.getElementById('persistence-notice')!.hidden = false;
+  if (config.enabled) {
+    document.getElementById('persistence-notice')!.hidden = false;
+    document.getElementById('developer-persistence-notice')!.hidden = false;
+  }
 }).catch(() => { /* Saving receipts still report admission even if configuration lookup fails. */ });
 
 function element<T extends HTMLElement>(id: string): T {
@@ -80,10 +99,41 @@ const list = element<HTMLTableSectionElement>('field-list');
 const analyzeButton = element<HTMLButtonElement>('analyze-button');
 const analysisPanel = element<HTMLElement>('analysis-panel');
 const analysisContent = element<HTMLDivElement>('analysis-content');
+const developerPanel = element<HTMLElement>('developer-panel');
+const testButton = element<HTMLButtonElement>('developer-test-button');
 let currentDocument: RentalDocument | null = null;
 let activeRequest: AbortController | null = null;
 let generation = 0;
 let persistenceGeneration = 0;
+let developerMode = false;
+let testing = false;
+let analyzing = false;
+
+setupSettings(element('app-settings'), enabled => {
+  developerMode = enabled;
+  if (!enabled && testing) cancelCurrentOperation();
+  developerPanel.hidden = !enabled;
+});
+
+function syncControls() {
+  analyzeButton.disabled = analyzing || testing;
+  analyzeButton.textContent = analyzing ? 'AI 正在分析…' : '发送并分析 →';
+  element('cancel-analysis').hidden = !analyzing;
+  testButton.disabled = testing || analyzing;
+  testButton.textContent = testing ? '测试进行中…' : '一键测试';
+  element('cancel-developer-test').hidden = !testing;
+}
+
+function showTestProgress(message: string, stage: number, failed = false) {
+  showMessage('developer-test-status', message);
+  element('developer-test-status').classList.toggle('error', failed);
+  element('developer-test-steps').querySelectorAll('li').forEach((step, index) => {
+    step.classList.toggle('active', index === stage);
+    step.classList.toggle('done', index < stage);
+    if (index === stage) step.setAttribute('aria-current', 'step');
+    else step.removeAttribute('aria-current');
+  });
+}
 
 async function trackPersistence(id: string, version: number) {
   for (let attempt = 0; attempt < 300 && version === persistenceGeneration; attempt++) {
@@ -110,6 +160,8 @@ function clearDocument() {
   generation++;
   activeRequest?.abort();
   activeRequest = null;
+  testing = false;
+  analyzing = false;
   currentDocument = null;
   panel.hidden = true;
   analysisPanel.hidden = true;
@@ -121,9 +173,8 @@ function clearDocument() {
   fileInput.value = '';
   showMessage('upload-status', '');
   showMessage('upload-error', '');
-  analyzeButton.disabled = false;
-  analyzeButton.textContent = '发送并分析 →';
-  element('cancel-analysis').hidden = true;
+  syncControls();
+  showTestProgress('', -1);
   element('payload-content').textContent = '';
   element('calculation-targets').textContent = '';
 }
@@ -147,20 +198,23 @@ function renderFields(fields: RentalField[]) {
 
 async function upload(file: File) {
   clearDocument();
-  const requestGeneration = generation;
+  activeRequest = new AbortController();
+  await loadDocument(file, generation, activeRequest.signal);
+}
+
+async function loadDocument(file: File, requestGeneration: number, signal: AbortSignal): Promise<boolean> {
   if (!file.name.toLowerCase().endsWith('.xlsx')) {
     showMessage('upload-error', '请选择 .xlsx 文件。其他格式请先在 Excel 中另存为 .xlsx。');
-    return;
+    return false;
   }
   if (file.size > 10 * 1024 * 1024) {
     showMessage('upload-error', '文件不能超过 10 MB，请精简后重新上传。');
-    return;
+    return false;
   }
-  activeRequest = new AbortController();
   showMessage('upload-status', `正在读取 ${file.name}…`);
   try {
-    const response = await importExcel(file, activeRequest.signal);
-    if (requestGeneration !== generation) return;
+    const response = await importExcel(file, signal);
+    if (requestGeneration !== generation) return false;
     currentDocument = response.document;
     element('payload-content').textContent = JSON.stringify(currentDocument, null, 2);
     element('file-name').textContent = currentDocument.fileName;
@@ -176,10 +230,12 @@ async function upload(file: File) {
     warnings.hidden = !response.warnings.length;
     panel.hidden = false;
     showMessage('upload-status', '表格已读取，可在下方核对。');
+    return true;
   } catch (error) {
-    if (requestGeneration !== generation) return;
+    if (requestGeneration !== generation) return false;
     showMessage('upload-status', '');
     showMessage('upload-error', error instanceof APIError ? error.message : '无法连接服务，请确认服务已启动后重试。');
+    return false;
   }
 }
 
@@ -247,8 +303,8 @@ dropZone.addEventListener('drop', e => {
 });
 
 element('clear-button').addEventListener('click', () => { clearDocument(); fileInput.focus(); });
-analyzeButton.addEventListener('click', async () => {
-  if (!currentDocument) return;
+async function runAnalysis(): Promise<boolean> {
+  if (!currentDocument || analyzing) return false;
   const analyzedDocument = currentDocument;
   const payload = JSON.stringify(analyzedDocument, null, 2);
   const requestGeneration = generation;
@@ -256,9 +312,8 @@ analyzeButton.addEventListener('click', async () => {
   showMessage('persistence-status', '');
   activeRequest?.abort();
   activeRequest = new AbortController();
-  analyzeButton.disabled = true;
-  analyzeButton.textContent = 'AI 正在分析…';
-  element('cancel-analysis').hidden = false;
+  analyzing = true;
+  syncControls();
   analysisPanel.hidden = false;
   turnLog.clear();
   analysisContent.replaceChildren(textElement('p', '正在核对表内费用并检查标记项目，通常需要几分钟。可随时取消。', 'quiet'));
@@ -268,25 +323,85 @@ analyzeButton.addEventListener('click', async () => {
       if (receipt.status === 'failed') showMessage('persistence-status', '本次后台保存任务未创建，分析报告仍可正常生成。');
       else if (receipt.taskId) void trackPersistence(receipt.taskId, saveGeneration);
     });
-    if (requestGeneration === generation) renderAnalysis(result, analyzedDocument);
+    if (requestGeneration !== generation) return false;
+    renderAnalysis(result, analyzedDocument);
+    return true;
   } catch (error) {
-    if (requestGeneration !== generation) return;
+    if (requestGeneration !== generation) return false;
     analysisContent.replaceChildren(textElement('p', error instanceof APIError ? error.message : '无法连接分析服务，请稍后重试。', 'message error'));
+    return false;
   } finally {
     if (requestGeneration === generation) {
-      analyzeButton.disabled = false;
-      analyzeButton.textContent = '发送并分析 →';
-      element('cancel-analysis').hidden = true;
+      analyzing = false;
+      activeRequest = null;
+      syncControls();
     }
   }
-});
+}
 
-element('cancel-analysis').addEventListener('click', () => {
+function cancelCurrentOperation() {
   generation++;
   activeRequest?.abort();
   activeRequest = null;
-  analyzeButton.disabled = false;
-  analyzeButton.textContent = '发送并分析 →';
-  element('cancel-analysis').hidden = true;
-  analysisContent.replaceChildren(textElement('p', '已取消本次分析。', 'quiet'));
-});
+  if (testing) {
+    testing = false;
+    showTestProgress('已取消本次测试，可重新点击“一键测试”。', -1);
+    showMessage('upload-status', currentDocument ? '表格已读取，可在下方核对。' : '');
+  }
+  if (analyzing) analysisContent.replaceChildren(textElement('p', '已取消本次分析。', 'quiet'));
+  analyzing = false;
+  syncControls();
+}
+
+async function runDeveloperTest() {
+  if (!developerMode || testing || analyzing) return;
+  clearDocument();
+  const requestGeneration = generation;
+  activeRequest = new AbortController();
+  const signal = activeRequest.signal;
+  testing = true;
+  syncControls();
+  showTestProgress('正在检查 AI 配置…', 0);
+  try {
+    const config = await account(signal);
+    if (requestGeneration !== generation) return;
+    if (!config.connected || config.needsReconnect) {
+      showTestProgress('请先在上方配置并连接 AI，再点击“一键测试”。', -1, true);
+      element('ai-account').scrollIntoView({ block: 'center' });
+      if (!element('login-options').hidden) element('api-key').focus();
+      return;
+    }
+    showTestProgress('正在导入测试表格…', 0);
+    const response = await fetch(testWorkbookURL, { signal });
+    if (!response.ok) throw new APIError('test_file_unavailable', '测试文件加载失败，请重试或重新构建前端。');
+    const file = new File([await response.blob()], '租房信息测试.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    if (requestGeneration !== generation) return;
+    const imported = await loadDocument(file, requestGeneration, signal);
+    if (requestGeneration !== generation) return;
+    if (!imported) {
+      showTestProgress('测试中断：表格导入失败，请查看下方上传提示后重试。', -1, true);
+      return;
+    }
+    showTestProgress('测试表格已导入，正在等待 AI 分析结果…', 1);
+    const completed = await runAnalysis();
+    if (requestGeneration !== generation) return;
+    showTestProgress(completed ? '测试完成，AI 分析结果已显示在下方。' : '测试中断：AI 分析失败，请查看检查结果中的提示后重试。', completed ? 3 : -1, !completed);
+    analysisPanel.scrollIntoView({ block: 'start' });
+  } catch (error) {
+    if (requestGeneration !== generation) return;
+    showTestProgress(error instanceof APIError ? error.message : '测试未完成，无法连接服务，请稍后重试。', -1, true);
+  } finally {
+    if (requestGeneration === generation) {
+      testing = false;
+      activeRequest = null;
+      syncControls();
+    }
+  }
+}
+
+analyzeButton.addEventListener('click', () => { if (!testing) void runAnalysis(); });
+element('cancel-analysis').addEventListener('click', cancelCurrentOperation);
+testButton.addEventListener('click', () => { void runDeveloperTest(); });
+element('cancel-developer-test').addEventListener('click', cancelCurrentOperation);
