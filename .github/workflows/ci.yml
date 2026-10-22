@@ -60,7 +60,7 @@ jobs:
         run: npm run test:e2e -- --forbid-only
       - name: 保存失败截图与执行跟踪
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-test-results
           path: web/test-results/
